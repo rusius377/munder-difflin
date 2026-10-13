@@ -374,9 +374,14 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
           <Num label={f('minAtrPct')} value={d.scalping.minAtrPct} step={0.01} suffix="%" onChange={(v) => setScalp({ minAtrPct: v })} />
           <Num label={f('maxAtrPct')} value={d.scalping.maxAtrPct} step={0.1} suffix="%" onChange={(v) => setScalp({ maxAtrPct: v })} />
           <Num label={f('biasRefreshMinutes')} value={d.scalping.biasRefreshMinutes} suffix={t('trading.units.min')} onChange={(v) => setScalp({ biasRefreshMinutes: v })} />
+          <Num label={f('bigTradeUsdt')} value={d.scalping.bigTradeUsdt} step={10000} suffix="USDT" onChange={(v) => setScalp({ bigTradeUsdt: v })} />
           <label style={{ ...hint, display: 'flex', gap: 6, alignItems: 'center' }}>
             <input type="checkbox" checked={d.scalping.agentBias} onChange={(e) => setScalp({ agentBias: e.target.checked })} />
             {f('agentBias')}
+          </label>
+          <label style={{ ...hint, display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={d.scalping.orderFlow} onChange={(e) => setScalp({ orderFlow: e.target.checked })} />
+            {f('orderFlow')}
           </label>
         </div>
       </Section>

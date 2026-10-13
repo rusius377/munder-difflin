@@ -4,7 +4,7 @@ import { PixelButton } from '../PixelButton';
 import {
   card, chip, fmtAge, fmtPct, fmtPx, fmtTime, fmtUsd, hint, metaRow, mono, pnlColor, sectionHead, useNow
 } from './tradingUi';
-import type { TradingConfig, TradingSnapshot, TradingSymbol, BiasDirection, ScalpPlanView } from '@shared/trading';
+import type { TradingConfig, TradingSnapshot, TradingSymbol, BiasDirection, FlowView, ScalpPlanView } from '@shared/trading';
 
 const BIAS_BG: Record<BiasDirection, string> = {
   LONG_ONLY: 'var(--cth-mint-light)',
@@ -67,6 +67,81 @@ function PlanCard({ plan, symbol }: { plan: ScalpPlanView; symbol: TradingSymbol
       {netWeak && <div style={{ ...hint, color: 'var(--cth-status-blocked)' }}>{t('trading.plan.feeWarning')}</div>}
       {plan.notes.length > 0 && <div style={hint}>{plan.notes.join(' · ')}</div>}
       {plan.bracketsEstimated && <div style={{ ...hint, fontSize: 10 }}>{t('trading.plan.estimated')}</div>}
+    </div>
+  );
+}
+
+const qtyFmt = (v: number) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(2) : v.toFixed(3));
+
+/** The tape and the book: CVD, aggression, big trades, imbalance, walls, absorption. */
+function FlowCard({ flow, symbol, now }: { flow: FlowView; symbol: TradingSymbol; now: number }) {
+  const { t } = useTranslation();
+  const base = symbol.replace('USDT', '');
+  const share = flow.buyShare1m;
+  const imb = flow.bookImbalance;
+  const imbShare = imb !== null ? imb / (1 + imb) : null;
+  const bar = (v: number | null, left: string, right: string) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ ...mono, width: 34 }}>{left}</span>
+      <div style={{ flex: 1, height: 6, background: 'var(--cth-coral-light)', position: 'relative' }}>
+        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${v === null ? 50 : Math.round(v * 100)}%`, background: 'var(--cth-mint)' }} />
+        <div style={{ position: 'absolute', left: '50%', top: -2, bottom: -2, width: 1, background: 'var(--cth-ink-700)' }} />
+      </div>
+      <span style={{ ...mono, width: 34, textAlign: 'right' }}>{right}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '6px 8px', background: 'var(--cth-cream-50)', border: '1px solid var(--cth-ink-100)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ ...hint, fontWeight: 700, color: 'var(--cth-ink-900)' }}>{t('trading.flow.title')}</span>
+        <span style={chip(flow.connected ? 'var(--cth-status-success)' : 'var(--cth-cream-300)', flow.connected ? 'var(--cth-cream-50)' : 'var(--cth-ink-900)')}>
+          {t(`trading.flow.source.${flow.connected ? 'live' : flow.source}`)}
+        </span>
+        <span style={mono}>{t('trading.flow.tps', { n: flow.tradesPerSec.toFixed(1) })}</span>
+        {flow.spreadBps !== null && <span style={mono}>{t('trading.overview.spread')} {flow.spreadBps.toFixed(2)}bp</span>}
+        {flow.absorption && <span style={chip(flow.absorption === 'buy' ? 'var(--cth-mint-light)' : 'var(--cth-coral-light)', 'var(--cth-ink-900)')}>{t(`trading.flow.absorption.${flow.absorption}`)}</span>}
+        <span style={{ ...hint, marginInlineStart: 'auto' }}>{fmtAge(now - flow.updatedAt)}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 6 }}>
+        {[
+          [t('trading.flow.cvd1m'), flow.cvd1m],
+          [t('trading.flow.cvd5m'), flow.cvd5m]
+        ].map(([label, v]) => (
+          <div key={label as string} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <span style={hint}>{label as string}</span>
+            <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: pnlColor(v as number) }}>{(v as number) >= 0 ? '+' : ''}{qtyFmt(v as number)} {base}</span>
+          </div>
+        ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <span style={hint}>{t('trading.flow.big')}</span>
+          <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: 'var(--cth-ink-900)' }}>
+            <span style={{ color: 'var(--cth-status-success)' }}>{t('trading.side.LONG')} {flow.bigBuys}</span> / <span style={{ color: 'var(--cth-status-blocked)' }}>{t('trading.side.SHORT')} {flow.bigSells}</span>
+          </span>
+        </div>
+      </div>
+      <span style={hint}>{t('trading.flow.aggression')}</span>
+      {bar(share, `${share === null ? '-' : Math.round(share * 100)}%`, `${share === null ? '-' : Math.round((1 - share) * 100)}%`)}
+      <span style={hint}>{t('trading.flow.book')}{imb !== null ? ` · ${imb.toFixed(2)}` : ''}</span>
+      {bar(imbShare, t('trading.flow.bid'), t('trading.flow.ask'))}
+      {flow.walls.length > 0 && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={hint}>{t('trading.flow.walls')}</span>
+          {flow.walls.map((w) => (
+            <span key={`${w.side}${w.price}`} style={chip(w.side === 'bid' ? 'var(--cth-mint-light)' : 'var(--cth-coral-light)', 'var(--cth-ink-900)')}>
+              {t(`trading.flow.wall.${w.side}`)} {fmtPx(w.price)} · {qtyFmt(w.qty)} ({w.distPct.toFixed(2)}%)
+            </span>
+          ))}
+        </div>
+      )}
+      {flow.bigTrades.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {flow.bigTrades.map((b) => (
+            <span key={`${b.t}${b.price}${b.qty}`} style={{ ...mono, color: b.buy ? 'var(--cth-status-success)' : 'var(--cth-status-blocked)' }}>
+              {fmtTime(b.t)} {t(`trading.flow.${b.buy ? 'buy' : 'sell'}`)} {qtyFmt(b.qty)} {base} @ {fmtPx(b.price)} ({fmtUsd(b.qty * b.price)} USDT)
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -229,6 +304,7 @@ export function TradingOverview({ snap, cfg }: { snap: TradingSnapshot | null; c
                     {sc.reasons.length > 0 && <div style={hint}>{sc.reasons.join(' · ')}</div>}
                     {sc.blocked && <div style={{ ...hint, color: 'var(--cth-ink-700)' }}>{t('trading.overview.blocked')}: {sc.blocked}</div>}
                     {sc.plan && !pos && <PlanCard plan={sc.plan} symbol={s} />}
+                    {snap?.flow?.[s] && <FlowCard flow={snap.flow[s]!} symbol={s} now={now} />}
                   </>
                 ) : (
                   <div style={hint}>{t('trading.overview.noSignal')}</div>

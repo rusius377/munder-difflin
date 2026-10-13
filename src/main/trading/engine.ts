@@ -29,6 +29,9 @@ import { evaluateScalp, manageScalp, biasKo, scalpPlan } from './scalper';
 import { Journal, type DayState } from './journal';
 import { fmtPrice } from './indicators';
 import { limitConcurrency, type LlmCall, type LlmClient } from './llm';
+import { FlowTracker, LiveFlowFeed, parseRestAggTrades } from './orderFlow';
+import type { ScalpInputs } from './marketData';
+import type { WsFactory } from './wsClient';
 import {
   agentRef, assessLiveKey, biasSkeleton, dayKeyOf, emptySnapshot, normalizeTradingConfig, pipelineSkeleton, stepId, stepKey,
   teamAgents, voteDirection,
@@ -45,6 +48,8 @@ export interface EngineDeps {
   emit: (snapshot: TradingSnapshot) => void;
   /** Desktop notification (entries, exits, halts, errors). Gated by automation.notify. */
   notify?: (title: string, body: string) => void;
+  /** WebSocket opener for the live order-flow streams; without it scalping reads flow from REST. */
+  wsFactory?: WsFactory;
   now?: () => number;
 }
 
@@ -93,6 +98,10 @@ export class TradingEngine {
   /** Decision that opened an agents-mode position, for reflection when it closes. */
   private openDecision: Partial<Record<TradingSymbol, { runId: string; summary: string; voters: Voter[] }>> = {};
   private lastErrorNotice = 0;
+  /** Live trade/book streams (scalping with order flow on). */
+  private feed: LiveFlowFeed | null = null;
+  /** REST-fed trackers when there is no live feed. */
+  private restTrackers: Partial<Record<TradingSymbol, FlowTracker>> = {};
   /** One project folder per agent: instructions, track record, outputs (agentProjects.ts). */
   readonly projects: AgentProjects;
   private scoring = false;
@@ -393,6 +402,15 @@ export class TradingEngine {
       this.snap.nextRunAt = {};
       this.runQueue = [];
       if (this.cfg.mode === 'agents') for (const s of this.cfg.symbols) this.snap.nextRunAt[s] = this.now();
+      if (this.cfg.mode === 'scalping' && this.cfg.scalping.orderFlow && this.deps.wsFactory) {
+        this.feed = new LiveFlowFeed(this.cfg.symbols, {
+          bigTradeUsdt: this.cfg.scalping.bigTradeUsdt,
+          factory: this.deps.wsFactory,
+          now: this.deps.now,
+          log: (m, l) => this.log(m, l ?? 'info')
+        });
+        this.feed.start();
+      }
       const tickMs = this.cfg.mode === 'scalping' ? this.cfg.scalping.pollSeconds * 1000 : 10_000;
       this.timer = setInterval(() => { void this.tick(); }, tickMs);
       this.setStatus('running');
@@ -408,9 +426,16 @@ export class TradingEngine {
     }
   }
 
+  private stopFeed(): void {
+    this.feed?.stop();
+    this.feed = null;
+    this.restTrackers = {};
+  }
+
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.stopFeed();
     this.stopping = true;
     this.runQueue = [];
     this.setStatus('stopped');
@@ -886,6 +911,7 @@ export class TradingEngine {
       this.log(`${symbol} 스캘핑 데이터 실패: ${e instanceof Error ? e.message : e}`, 'warn', symbol);
       return;
     }
+    if (p.orderFlow) await this.attachFlow(symbol, inputs);
     // A bias older than two refresh periods is stale: fall back to both sides.
     const b = this.snap.biases[symbol];
     const bias = p.agentBias && b && this.now() - b.updatedAt < 2 * p.biasRefreshMinutes * 60_000 ? b.bias : undefined;
@@ -942,6 +968,27 @@ export class TradingEngine {
     }
     this.log(`${symbol} 스캘핑 신호 ${ev.entry.side === 'LONG' ? '롱' : '숏'} ${ev.entry.score}점 — ${ev.reasons.slice(0, 4).join(', ')}`, 'info', symbol);
     await this.openPlan(verdict.plan, 'scalping');
+  }
+
+  /**
+   * Order flow for the scalper: the live tracker when the streams deliver;
+   * otherwise the same tracker fed from REST (recent aggTrades + the depth
+   * snapshot the scalper already read).
+   */
+  private async attachFlow(symbol: TradingSymbol, inputs: ScalpInputs): Promise<void> {
+    const tracker = this.feed?.trackers[symbol]
+      ?? (this.restTrackers[symbol] ??= new FlowTracker(symbol, { bigTradeUsdt: this.cfg.scalping.bigTradeUsdt }));
+    const liveTrades = !!this.feed?.live('market');
+    const liveBook = !!this.feed?.live('public');
+    if (!liveTrades) {
+      try {
+        for (const tr of parseRestAggTrades(await this.market.client.aggTradesRaw(symbol, 500))) tracker.addTrade(tr);
+      } catch { /* the candles' taker volume still scores the flow */ }
+    }
+    if (!liveBook && inputs.depth) tracker.setBook({ bids: inputs.depth.bids, asks: inputs.depth.asks, at: this.now() });
+    const source = liveTrades ? 'live' : 'rest';
+    inputs.flow = tracker.features(this.now(), source);
+    this.snap.flow[symbol] = tracker.view(this.now(), source, liveTrades && liveBook);
   }
 
   private async refreshBias(symbol: TradingSymbol): Promise<void> {
@@ -1058,6 +1105,7 @@ export class TradingEngine {
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.stopFeed();
     if (this.emitTimer) clearTimeout(this.emitTimer);
     this.emitTimer = null;
     this.stopping = true;

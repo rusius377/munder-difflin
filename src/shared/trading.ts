@@ -151,6 +151,10 @@ export interface ScalpingSettings {
   /** Ask the agent bias desk for a direction filter. */
   agentBias: boolean;
   biasRefreshMinutes: number;
+  /** Read Binance's live trade and book streams (CVD, big trades, imbalance, walls) into the score. */
+  orderFlow: boolean;
+  /** A trade at or above this notional (USDT) counts as a big trade. */
+  bigTradeUsdt: number;
 }
 
 /**
@@ -339,7 +343,9 @@ export function defaultTradingConfig(): TradingConfig {
       minAtrPct: 0.03,
       maxAtrPct: 1.2,
       agentBias: true,
-      biasRefreshMinutes: 15
+      biasRefreshMinutes: 15,
+      orderFlow: true,
+      bigTradeUsdt: 100_000
     },
     teams: {
       ...TEAM_PRESETS.standard,
@@ -464,7 +470,9 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
     minAtrPct: clampNum(sc.minAtrPct, 0, 2, d.scalping.minAtrPct),
     maxAtrPct: clampNum(sc.maxAtrPct, 0.05, 10, d.scalping.maxAtrPct),
     agentBias: typeof sc.agentBias === 'boolean' ? sc.agentBias : d.scalping.agentBias,
-    biasRefreshMinutes: clampInt(sc.biasRefreshMinutes, 5, 240, d.scalping.biasRefreshMinutes)
+    biasRefreshMinutes: clampInt(sc.biasRefreshMinutes, 5, 240, d.scalping.biasRefreshMinutes),
+    orderFlow: typeof sc.orderFlow === 'boolean' ? sc.orderFlow : d.scalping.orderFlow,
+    bigTradeUsdt: clampNum(sc.bigTradeUsdt, 1_000, 10_000_000, d.scalping.bigTradeUsdt)
   };
   if (scalping.emaSlow <= scalping.emaFast) scalping.emaSlow = scalping.emaFast + 1;
   if (scalping.maxAtrPct <= scalping.minAtrPct) scalping.maxAtrPct = scalping.minAtrPct + 0.05;
@@ -914,6 +922,32 @@ export interface ScalpView {
   plan?: ScalpPlanView;
 }
 
+/** Live order flow for one symbol (see main/trading/orderFlow.ts). */
+export interface FlowView {
+  /** live = WebSocket streams, rest = polled fallback, replay = historical files. */
+  source: 'live' | 'rest' | 'replay';
+  /** Both streams (trades and book) are delivering. */
+  connected: boolean;
+  /** Aggressive buy − sell volume (base asset). */
+  cvd1m: number;
+  cvd5m: number;
+  vol1m: number;
+  buyShare1m: number | null;
+  tradesPerSec: number;
+  bigBuys: number;
+  bigSells: number;
+  /** Bid size / ask size over the visible book. */
+  bookImbalance: number | null;
+  walls: Array<{ side: 'bid' | 'ask'; price: number; qty: number; distPct: number }>;
+  spreadBps: number | null;
+  change1mPct: number | null;
+  absorption: 'buy' | 'sell' | null;
+  lastPrice: number | null;
+  updatedAt: number;
+  /** Newest big trades. */
+  bigTrades: Array<{ t: number; price: number; qty: number; buy: boolean }>;
+}
+
 export interface TradeView {
   id: string;
   symbol: TradingSymbol;
@@ -956,6 +990,8 @@ export interface TradingSnapshot {
   positions: PositionView[];
   pendingEntries: PendingEntryView[];
   scalp: Partial<Record<TradingSymbol, ScalpView>>;
+  /** Order flow per symbol (scalping mode). */
+  flow: Partial<Record<TradingSymbol, FlowView>>;
   biases: Partial<Record<TradingSymbol, BiasView>>;
   runs: AgentRunView[];
   trades: TradeView[];
@@ -974,6 +1010,7 @@ export function emptySnapshot(cfg: TradingConfig): TradingSnapshot {
     positions: [],
     pendingEntries: [],
     scalp: {},
+    flow: {},
     biases: {},
     runs: [],
     trades: [],

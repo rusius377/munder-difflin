@@ -9,6 +9,7 @@
  * handed to the model. The models never fetch data themselves, which is what
  * lets the desk run on a CLI subscription that has no tool-calling API.
  */
+import type { FlowFeatures } from './orderFlow';
 import {
   BinanceFuturesClient, type Depth, type FetchLike, type FundingPoint, type OiPoint,
   type PremiumIndex, type RatioPoint, type Ticker24h
@@ -289,6 +290,8 @@ export interface ScalpInputs {
   trend: Kline[];
   depth: Depth | null;
   premium: PremiumIndex | null;
+  /** Tape and book features (live streams, REST fallback, or a replay). */
+  flow?: FlowFeatures | null;
 }
 
 /** All market data the desk reads, with small caches so the scalping loop stays light on API weight. */

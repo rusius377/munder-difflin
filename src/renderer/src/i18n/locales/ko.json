@@ -1749,7 +1749,9 @@
         "biasPanel": "방향 필터 패널 인원 (스캘핑)",
         "maxParallel": "동시 실행 에이전트 수",
         "consensus": "합의 규칙",
-        "agentMaxLeverage": "에이전트 모드 최대 레버리지"
+        "agentMaxLeverage": "에이전트 모드 최대 레버리지",
+        "orderFlow": "실시간 호가·체결 흐름 읽기 (바이낸스 스트림)",
+        "bigTradeUsdt": "대량 체결 기준"
       },
       "automationIntro": "바이낸스 API로 주문이 나갈 때 앱이 스스로 하는 일입니다. 데스크는 Munder Difflin이 켜져 있는 동안에만 거래합니다.",
       "autoStartLive": "실거래 환경에서 자동 시작이 켜져 있습니다: 앱을 켤 때마다 실제 자금으로 거래를 다시 시작합니다.",
@@ -1924,6 +1926,33 @@
       "levAdjusted": "요청 {{req}}배 → {{lev}}배",
       "feeWarning": "수수료 후 손익비가 1보다 낮습니다. 수수료가 이 거래의 기대수익 대부분을 먹습니다. 백테스트로 손절·목표 ATR 배수를 조정해 보세요.",
       "estimated": "모의투자의 레버리지 구간은 추정값입니다. 데모·실거래는 계정에서 실제 구간을 읽습니다."
+    },
+    "flow": {
+      "title": "호가·체결 흐름",
+      "source": {
+        "live": "실시간 스트림",
+        "rest": "REST 보완",
+        "replay": "리플레이"
+      },
+      "tps": "초당 {{n}}건",
+      "cvd1m": "1분 CVD",
+      "cvd5m": "5분 CVD",
+      "big": "대량 체결 (5분)",
+      "aggression": "최근 1분 시장가 매수 / 매도 비율",
+      "book": "보이는 호가: 매수잔량 / 매도잔량",
+      "bid": "매수",
+      "ask": "매도",
+      "walls": "벽",
+      "wall": {
+        "bid": "매수벽",
+        "ask": "매도벽"
+      },
+      "buy": "매수",
+      "sell": "매도",
+      "absorption": {
+        "buy": "매도 흡수",
+        "sell": "매수 흡수"
+      }
     }
   }
 }

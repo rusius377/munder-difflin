@@ -47,8 +47,48 @@ function trendOf(trendK: Kline[], period: number): 'up' | 'down' | 'flat' {
   return 'flat';
 }
 
+const fmtQty = (v: number) => `${v >= 0 ? '+' : ''}${Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2)}`;
+
+/**
+ * Order flow (15): from the live tape and book when the desk has them, else
+ * from the candles' taker volume and a REST book snapshot.
+ *   tape   — 1-minute aggression share and CVD (6), 5-minute CVD (3)
+ *   size   — net big trades on our side (3)
+ *   book   — visible bid/ask imbalance (3)
+ *   bonus  — the other side's aggression being absorbed (+3)
+ *   brake  — a wall between price and the target (−6)
+ */
+function flowScore(dir: 1 | -1, closed: Kline[], inputs: ScalpInputs, price: number, targetDist: number): SideScore {
+  const reasons: string[] = [];
+  let score = 0;
+  const f = inputs.flow;
+  if (f && f.vol1m > 0) {
+    if (f.buyShare1m !== null && (dir === 1 ? f.buyShare1m >= 0.55 && f.cvd1m > 0 : f.buyShare1m <= 0.45 && f.cvd1m < 0)) {
+      score += 6;
+      reasons.push(`1분 체결 ${dir === 1 ? '매수' : '매도'} 우위 ${((dir === 1 ? f.buyShare1m : 1 - f.buyShare1m) * 100).toFixed(0)}% (CVD ${fmtQty(f.cvd1m)})`);
+    }
+    if (dir * f.cvd5m > 0) { score += 3; reasons.push(`5분 CVD ${fmtQty(f.cvd5m)}`); }
+    const netBig = dir === 1 ? f.bigBuys - f.bigSells : f.bigSells - f.bigBuys;
+    if (netBig >= 2) { score += 3; reasons.push(`대량 ${dir === 1 ? '매수' : '매도'} 체결 우위 ${netBig}건`); }
+    if (f.absorption === (dir === 1 ? 'buy' : 'sell')) { score += 3; reasons.push(`${dir === 1 ? '매도' : '매수'} 공세 흡수`); }
+  } else {
+    const share = takerBuyShare(closed, 3);
+    if (share !== null && (dir === 1 ? share > 0.55 : share < 0.45)) { score += 8; reasons.push(`테이커 ${dir === 1 ? '매수' : '매도'} 우위 ${(share * 100).toFixed(0)}%`); }
+  }
+  const imb = f?.bookImbalance ?? depthImbalance(inputs.depth, 20);
+  if (imb !== null && imb !== undefined && (dir === 1 ? imb > 1.15 : imb < 0.87)) {
+    score += f ? 3 : 7;
+    reasons.push(`호가 ${dir === 1 ? '매수' : '매도'}잔량 우위 ${imb.toFixed(2)}`);
+  }
+  if (f && targetDist > 0) {
+    const wall = f.walls.find((w) => w.side === (dir === 1 ? 'ask' : 'bid') && (dir === 1 ? w.price > price && w.price < price + targetDist : w.price < price && w.price > price - targetDist));
+    if (wall) { score -= 6; reasons.push(`목표가 앞 ${dir === 1 ? '매도' : '매수'}벽 ${wall.price} (${wall.qty.toFixed(1)})`); }
+  }
+  return { score, reasons };
+}
+
 /** Score one side. `dir` = +1 for long, −1 for short; everything mirrors. */
-function scoreSide(dir: 1 | -1, closed: Kline[], trend: 'up' | 'down' | 'flat', p: ScalpingSettings, inputs: ScalpInputs, price: number): SideScore {
+function scoreSide(dir: 1 | -1, closed: Kline[], trend: 'up' | 'down' | 'flat', p: ScalpingSettings, inputs: ScalpInputs, price: number, atrV = 0): SideScore {
   const reasons: string[] = [];
   let score = 0;
   const closes = closed.map((c) => c.close);
@@ -103,10 +143,9 @@ function scoreSide(dir: 1 | -1, closed: Kline[], trend: 'up' | 'down' | 'flat', 
   }
 
   // 5. Order flow (15)
-  const share = takerBuyShare(closed, 3);
-  if (share !== null && (dir === 1 ? share > 0.55 : share < 0.45)) { score += 8; reasons.push(`테이커 ${dir === 1 ? '매수' : '매도'} 우위 ${(share * 100).toFixed(0)}%`); }
-  const imb = depthImbalance(inputs.depth, 20);
-  if (imb !== null && (dir === 1 ? imb > 1.15 : imb < 0.87)) { score += 7; reasons.push(`호가 ${dir === 1 ? '매수' : '매도'}잔량 우위 ${imb.toFixed(2)}`); }
+  const flow = flowScore(dir, closed, inputs, price, p.tpAtr * atrV);
+  score += flow.score;
+  reasons.push(...flow.reasons);
 
   // 6. Volume confirmation (10)
   const lastBar = closed[closed.length - 1];
@@ -133,15 +172,15 @@ export function evaluateScalp(inputs: ScalpInputs, p: ScalpingSettings, bias?: B
   const price = k[k.length - 1]?.close ?? 0;
   const atrV = lastValue(atr(closed, p.atrPeriod)) ?? 0;
   const atrPct = price ? (atrV / price) * 100 : 0;
-  const spr = spreadBps(inputs.depth) ?? 0;
+  const spr = spreadBps(inputs.depth) ?? inputs.flow?.spreadBps ?? 0;
   const trend = trendOf(inputs.trend, p.trendEma);
   const base: ScalpEval = { price, longScore: 0, shortScore: 0, trend, atr: atrV, atrPct, spreadBps: spr, reasons: [] };
   if (closed.length < Math.max(p.emaSlow, p.atrPeriod, 30) + 5 || !price || !atrV) {
     return { ...base, blocked: '캔들 데이터 부족' };
   }
 
-  const L = scoreSide(1, closed, trend, p, inputs, price);
-  const S = scoreSide(-1, closed, trend, p, inputs, price);
+  const L = scoreSide(1, closed, trend, p, inputs, price, atrV);
+  const S = scoreSide(-1, closed, trend, p, inputs, price, atrV);
   const ev: ScalpEval = { ...base, longScore: L.score, shortScore: S.score };
   const top = L.score >= S.score ? { side: 'LONG' as Side, s: L, other: S.score } : { side: 'SHORT' as Side, s: S, other: L.score };
   ev.reasons = top.s.reasons;

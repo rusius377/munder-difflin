@@ -1749,7 +1749,9 @@
         "biasPanel": "方向过滤小组（剥头皮）",
         "maxParallel": "同时运行的智能体",
         "consensus": "共识规则",
-        "agentMaxLeverage": "智能体模式最大杠杆"
+        "agentMaxLeverage": "智能体模式最大杠杆",
+        "orderFlow": "读取实时成交与盘口（币安推送）",
+        "bigTradeUsdt": "大额成交阈值"
       },
       "automationIntro": "订单通过币安 API 下达时应用自动执行的事项。只有 Munder Difflin 打开时交易台才会交易。",
       "autoStartLive": "实盘环境已开启自动启动：每次打开应用都会用真实资金恢复交易。",
@@ -1924,6 +1926,33 @@
       "levAdjusted": "请求 {{req}}倍 → {{lev}}倍",
       "feeWarning": "扣除手续费后盈亏比低于 1——手续费吃掉了这笔交易的大部分优势。请用回测调整止损/目标的 ATR 倍数。",
       "estimated": "模拟盘使用的杠杆分层为估算值；演示和实盘会从账户读取真实分层。"
+    },
+    "flow": {
+      "title": "订单流（成交 · 盘口）",
+      "source": {
+        "live": "实时推送",
+        "rest": "REST 补充",
+        "replay": "回放"
+      },
+      "tps": "每秒 {{n}} 笔",
+      "cvd1m": "1分钟 CVD",
+      "cvd5m": "5分钟 CVD",
+      "big": "大额成交（5分钟）",
+      "aggression": "最近1分钟主动买/卖量",
+      "book": "可见盘口：买 / 卖",
+      "bid": "买盘",
+      "ask": "卖盘",
+      "walls": "大单墙",
+      "wall": {
+        "bid": "买墙",
+        "ask": "卖墙"
+      },
+      "buy": "买入",
+      "sell": "卖出",
+      "absorption": {
+        "buy": "卖压被吸收",
+        "sell": "买压被吸收"
+      }
     }
   }
 }

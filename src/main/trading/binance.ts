@@ -292,6 +292,16 @@ export class BinanceFuturesClient {
     return parseKlines(await this.publicGet('/fapi/v1/klines', { symbol, interval, startTime: Math.floor(startTime), limit }));
   }
 
+  /** Candles between two times (ms), at most `limit` (Binance max 1500) — replays page through this. */
+  async klinesRange(symbol: string, interval: string, startTime: number, endTime: number, limit = 1500): Promise<Kline[]> {
+    return parseKlines(await this.publicGet('/fapi/v1/klines', { symbol, interval, startTime: Math.floor(startTime), endTime: Math.floor(endTime), limit }));
+  }
+
+  /** GET /fapi/v1/aggTrades (weight 20): the latest aggregate trades, raw rows. */
+  aggTradesRaw(symbol: string, limit = 500, fromId?: number): Promise<unknown> {
+    return this.publicGet('/fapi/v1/aggTrades', fromId !== undefined ? { symbol, limit, fromId } : { symbol, limit });
+  }
+
   async premiumIndex(symbol: string): Promise<PremiumIndex> {
     const r = await this.publicGet<Record<string, unknown>>('/fapi/v1/premiumIndex', { symbol });
     return {

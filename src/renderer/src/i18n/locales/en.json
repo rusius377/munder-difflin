@@ -1749,7 +1749,9 @@
         "biasPanel": "bias panel (scalping)",
         "maxParallel": "agents running at once",
         "consensus": "consensus rule",
-        "agentMaxLeverage": "agent-mode max leverage"
+        "agentMaxLeverage": "agent-mode max leverage",
+        "orderFlow": "read the live tape and book (Binance streams)",
+        "bigTradeUsdt": "big trade size"
       },
       "automationIntro": "What the app does on its own once orders run through the Binance API. The desk only trades while Munder Difflin is open.",
       "autoStartLive": "Auto-start is on for the LIVE venue: every app launch resumes trading real money.",
@@ -1924,6 +1926,33 @@
       "levAdjusted": "asked {{req}}x → {{lev}}x",
       "feeWarning": "Reward:risk after fees is below 1 — fees take most of this trade's edge. Use a backtest to tune the stop/target ATR multiples.",
       "estimated": "Leverage tiers are Binance-shaped estimates on paper; demo and live read the real table from your account."
+    },
+    "flow": {
+      "title": "Order flow (tape · book)",
+      "source": {
+        "live": "live streams",
+        "rest": "REST fallback",
+        "replay": "replay"
+      },
+      "tps": "{{n}} trades/s",
+      "cvd1m": "1-minute CVD",
+      "cvd5m": "5-minute CVD",
+      "big": "big trades (5 min)",
+      "aggression": "aggressive buy / sell volume, last minute",
+      "book": "visible book: bids / asks",
+      "bid": "bids",
+      "ask": "asks",
+      "walls": "walls",
+      "wall": {
+        "bid": "bid wall",
+        "ask": "ask wall"
+      },
+      "buy": "buy",
+      "sell": "sell",
+      "absorption": {
+        "buy": "selling absorbed",
+        "sell": "buying absorbed"
+      }
     }
   }
 }

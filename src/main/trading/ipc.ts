@@ -28,6 +28,7 @@ import { TradingEngine } from './engine';
 import { createLlmClient } from './llm';
 import { parseAgentId } from './agentProjects';
 import { BinanceFuturesClient, BINANCE_REST, liveKeyPermissions, type FetchLike } from './binance';
+import { connectWebSocket } from './wsClient';
 import {
   assessLiveKey, normalizeTradingConfig, TRADING_SECRET_KEYS, TRADING_SYMBOLS, type EngineStatus,
   type TradingConfig, type TradingSecretKey, type TradingSecretPresence, type TradingSymbol
@@ -102,6 +103,7 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
       syncKeepAwake(snapshot.status);
       opts.broadcast('trading:update', snapshot);
     },
+    wsFactory: connectWebSocket,
     notify: (title, body) => {
       try { if (Notification.isSupported()) new Notification({ title, body, silent: false }).show(); } catch { /* best-effort */ }
     }
