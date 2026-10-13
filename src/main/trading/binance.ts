@@ -314,8 +314,9 @@ export class BinanceFuturesClient {
     };
   }
 
-  async fundingRateHistory(symbol: string, limit = 30): Promise<FundingPoint[]> {
-    const r = await this.publicGet<Array<Record<string, unknown>>>('/fapi/v1/fundingRate', { symbol, limit });
+  /** `endTime` (ms): history up to that moment (replays). */
+  async fundingRateHistory(symbol: string, limit = 30, endTime?: number): Promise<FundingPoint[]> {
+    const r = await this.publicGet<Array<Record<string, unknown>>>('/fapi/v1/fundingRate', endTime ? { symbol, limit, endTime: Math.floor(endTime) } : { symbol, limit });
     return (Array.isArray(r) ? r : []).map((x) => ({ fundingTime: num(x.fundingTime), fundingRate: num(x.fundingRate) }));
   }
 
@@ -324,8 +325,9 @@ export class BinanceFuturesClient {
     return num(r.openInterest);
   }
 
-  async openInterestHist(symbol: string, period = '1h', limit = 48): Promise<OiPoint[]> {
-    const r = await this.publicGet<Array<Record<string, unknown>>>('/futures/data/openInterestHist', { symbol, period, limit });
+  /** Binance keeps only the last 30 days of this series. */
+  async openInterestHist(symbol: string, period = '1h', limit = 48, endTime?: number): Promise<OiPoint[]> {
+    const r = await this.publicGet<Array<Record<string, unknown>>>('/futures/data/openInterestHist', endTime ? { symbol, period, limit, endTime: Math.floor(endTime) } : { symbol, period, limit });
     return (Array.isArray(r) ? r : []).map((x) => ({
       timestamp: num(x.timestamp),
       openInterest: num(x.sumOpenInterest),
@@ -333,8 +335,8 @@ export class BinanceFuturesClient {
     }));
   }
 
-  private async ratio(path: string, symbol: string, period: string, limit: number): Promise<RatioPoint[]> {
-    const r = await this.publicGet<Array<Record<string, unknown>>>(path, { symbol, period, limit });
+  private async ratio(path: string, symbol: string, period: string, limit: number, endTime?: number): Promise<RatioPoint[]> {
+    const r = await this.publicGet<Array<Record<string, unknown>>>(path, endTime ? { symbol, period, limit, endTime: Math.floor(endTime) } : { symbol, period, limit });
     return (Array.isArray(r) ? r : []).map((x) => ({
       timestamp: num(x.timestamp),
       value: num(x.longShortRatio ?? x.buySellRatio),
@@ -343,16 +345,16 @@ export class BinanceFuturesClient {
     }));
   }
 
-  globalLongShortAccountRatio(symbol: string, period = '1h', limit = 48): Promise<RatioPoint[]> {
-    return this.ratio('/futures/data/globalLongShortAccountRatio', symbol, period, limit);
+  globalLongShortAccountRatio(symbol: string, period = '1h', limit = 48, endTime?: number): Promise<RatioPoint[]> {
+    return this.ratio('/futures/data/globalLongShortAccountRatio', symbol, period, limit, endTime);
   }
 
-  topLongShortPositionRatio(symbol: string, period = '1h', limit = 48): Promise<RatioPoint[]> {
-    return this.ratio('/futures/data/topLongShortPositionRatio', symbol, period, limit);
+  topLongShortPositionRatio(symbol: string, period = '1h', limit = 48, endTime?: number): Promise<RatioPoint[]> {
+    return this.ratio('/futures/data/topLongShortPositionRatio', symbol, period, limit, endTime);
   }
 
-  takerBuySellRatio(symbol: string, period = '1h', limit = 48): Promise<RatioPoint[]> {
-    return this.ratio('/futures/data/takerlongshortRatio', symbol, period, limit);
+  takerBuySellRatio(symbol: string, period = '1h', limit = 48, endTime?: number): Promise<RatioPoint[]> {
+    return this.ratio('/futures/data/takerlongshortRatio', symbol, period, limit, endTime);
   }
 
   async ticker24h(symbol: string): Promise<Ticker24h> {

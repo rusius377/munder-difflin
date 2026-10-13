@@ -1417,7 +1417,8 @@
       "trades": "成交记录",
       "log": "日志",
       "settings": "设置",
-      "team": "智能体文件夹"
+      "team": "智能体文件夹",
+      "backtest": "回测"
     },
     "status": {
       "stopped": "已停止",
@@ -1539,7 +1540,8 @@
       "biasPending": "等待方向过滤器",
       "biasOff": "关闭（允许双向）",
       "committeeAgree": "委员会 {{agree}}/{{responded}} 赞成",
-      "committeeMissed": "委员会未达成共识 → 观望"
+      "committeeMissed": "委员会未达成共识 → 观望",
+      "experience": "经验"
     },
     "roles": {
       "technical": "技术分析师",
@@ -1751,7 +1753,9 @@
         "consensus": "共识规则",
         "agentMaxLeverage": "智能体模式最大杠杆",
         "orderFlow": "读取实时成交与盘口（币安推送）",
-        "bigTradeUsdt": "大额成交阈值"
+        "bigTradeUsdt": "大额成交阈值",
+        "experienceFilter": "跳过回测中亏损的形态（经验过滤）",
+        "experienceMinSamples": "经验可否决前所需的回放交易数"
       },
       "automationIntro": "订单通过币安 API 下达时应用自动执行的事项。只有 Munder Difflin 打开时交易台才会交易。",
       "autoStartLive": "实盘环境已开启自动启动：每次打开应用都会用真实资金恢复交易。",
@@ -1953,6 +1957,128 @@
         "buy": "卖压被吸收",
         "sell": "买压被吸收"
       }
+    },
+    "backtest": {
+      "loading": "加载中…",
+      "intro": "用交易台回放币安历史行情：每笔进场都走到止损、止盈或强平，结果会积累为经验。这里不会下任何单。",
+      "newRun": "新的回测",
+      "modes": {
+        "scalping": "剥头皮",
+        "agents": "智能体团队"
+      },
+      "engines": {
+        "builtin": "内置回放",
+        "nautilus": "Nautilus 引擎"
+      },
+      "modeHint": {
+        "builtin": "实盘剥头皮逻辑，按秒在币安逐笔成交（aggTrades）和 ±1% 盘口深度上运行，含你的风控、75 倍强平价和手续费。",
+        "nautilus": "剥头皮逻辑负责决策；NautilusTrader 的模拟交易所用每一笔历史成交撮合订单，含延迟和滑点。需要 Python 3.12+ 并在下方安装引擎。",
+        "agents": "整个智能体团队在过去的时刻做决策，每笔交易向后推进到止损或止盈。日期会平移、价格会缩放，模型无法回忆之后发生了什么。"
+      },
+      "fromDay": "开始（UTC）",
+      "toDay": "结束（UTC；最多 31 天，逐笔最多 7 天）",
+      "startEquity": "初始资金",
+      "leverage": "杠杆",
+      "evalEverySec": "评估间隔",
+      "episodes": "回放时刻",
+      "horizonHours": "最长持仓",
+      "useTape": "使用逐笔成交和盘口深度（每天约 10–30 MB）",
+      "maskHistory": "向模型隐藏真实日期和价格",
+      "learnScalp": "从中学习（把交易加入剥头皮经验）",
+      "learnAgents": "从中学习（智能体战绩与教训）",
+      "agentsCost": "每个时刻都是一次完整的团队运行（共 {{n}} 次），会像实时分析一样消耗 LLM 用量。",
+      "start": "开始回测",
+      "queue": "加入队列",
+      "jobs": "进行中与最近",
+      "states": {
+        "queued": "排队中",
+        "loading": "下载中",
+        "running": "运行中",
+        "done": "完成",
+        "error": "失败",
+        "cancelled": "已取消"
+      },
+      "cancel": "取消",
+      "view": "查看",
+      "delete": "删除",
+      "deleteHint": "同时从剥头皮经验中移除这些交易",
+      "missing": "该结果已不在磁盘上",
+      "close": "关闭",
+      "results": "已保存的结果",
+      "noResults": "还没有回测。",
+      "learned": "已学习",
+      "detail": "结果",
+      "byExit": "离场方式：",
+      "trades": "交易",
+      "showAll": "显示全部 {{n}} 笔",
+      "dataLevels": {
+        "tape": "逐笔（秒级）",
+        "candles": "1 分钟 K 线",
+        "mixed": "逐笔 + K 线",
+        "agents": "智能体团队"
+      },
+      "cols": {
+        "when": "运行时间",
+        "run": "回测",
+        "period": "区间",
+        "data": "数据",
+        "time": "进场时间",
+        "side": "方向",
+        "decision": "决策",
+        "entry": "进场",
+        "stop": "止损",
+        "target": "目标",
+        "exit": "离场",
+        "lev": "杠杆",
+        "liq": "强平价",
+        "pnl": "盈亏（USDT）",
+        "reason": "离场原因",
+        "outcome": "推演结果",
+        "horizon": "期间涨跌",
+        "calls": "智能体判断命中"
+      },
+      "stats": {
+        "trades": "交易数",
+        "winRate": "胜率",
+        "return": "收益率",
+        "netPnl": "净盈亏",
+        "avgR": "平均 R",
+        "profitFactor": "盈亏比因子",
+        "maxDd": "最大回撤",
+        "fees": "手续费",
+        "avgHold": "平均持仓",
+        "liquidations": "强平次数",
+        "endEquity": "期末资金",
+        "beforeFees": "扣费前 {{v}} USDT"
+      },
+      "experience": {
+        "title": "剥头皮经验",
+        "intro": "已学习的交易按形态分组（方向、趋势、信号强度、波动、订单流）。开启经验过滤后，至少 {{n}} 笔且平均 R 为负的形态在实盘中会被跳过。",
+        "off": "设置中经验过滤已关闭——经验会积累但不会阻止进场。",
+        "empty": "还没有经验——开启“学习”运行一次剥头皮回测。",
+        "trades": "{{n}} 笔交易",
+        "runs": "来自 {{n}} 次回测",
+        "setup": "形态",
+        "n": "笔数",
+        "veto": "实盘跳过",
+        "clear": "清除经验"
+      },
+      "nautilus": {
+        "title": "Nautilus 回测引擎",
+        "intro": "交易所级回测引擎（撮合、延迟、滑点）。它在应用数据目录下独立的 Python 环境中运行；只需安装一次（几百 MB，需几分钟）。",
+        "states": {
+          "ready": "就绪",
+          "installing": "安装中",
+          "not-installed": "未安装",
+          "missing-python": "缺少 Python 3.12+",
+          "error": "错误"
+        },
+        "check": "重新检查",
+        "install": "安装 NautilusTrader",
+        "needInstall": "Nautilus 引擎尚未就绪——见下方引擎部分。",
+        "missingPython": "从 python.org 安装 Python 3.12、3.13 或 3.14（Windows 上勾选“Add python.exe to PATH”），重启应用后点击安装。"
+      },
+      "episodeCount": "回放时刻数"
     }
   }
 }

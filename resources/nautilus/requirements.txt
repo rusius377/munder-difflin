@@ -1,0 +1,3 @@
+# Installed by the trading desk into its own virtual environment
+# (<userData>/trading/nautilus/venv). Python 3.12–3.14.
+nautilus_trader==1.231.0

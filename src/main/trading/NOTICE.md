@@ -24,5 +24,13 @@ Derived material and what was changed:
 Everything else in this folder (Binance client, market data, indicators, risk
 engine, brokers, scalper, engine, IPC, the multi-agent teams in `teams.ts`:
 personas, team-lead merges, committee and panel vote tallies, and the per-agent
-project folders in `agentProjects.ts`) is original to Munder Difflin and is
-covered by the repository's MIT license.
+project folders in `agentProjects.ts`, order flow, leverage brackets, replays,
+experience and backtests) is original to Munder Difflin and is covered by the
+repository's MIT license.
+
+NautilusTrader (https://github.com/nautechsystems/nautilus_trader, LGPL-3.0) is
+not bundled. On request the app pip-installs `nautilus_trader` into a separate
+Python virtual environment under the user's data folder and runs
+`resources/nautilus/desk_backtest.py` (original, MIT) against its public API in a
+separate process. Historical market data comes from Binance's public data
+archive (https://data.binance.vision) at run time and is not redistributed.

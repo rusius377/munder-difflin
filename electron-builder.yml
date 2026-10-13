@@ -75,6 +75,13 @@ extraResources:
   # repo resources/skills). Directory copy preserves the <id>/SKILL.md tree.
   - from: resources/skills
     to: skills
+  # Trading desk: the NautilusTrader backtest runner (Python). The desk installs
+  # nautilus_trader into its own venv on first use and runs this script there.
+  - from: resources/nautilus
+    to: nautilus
+    filter:
+      - "*.py"
+      - "*.txt"
 
 asarUnpack:
   - "**/node_modules/node-pty/**"

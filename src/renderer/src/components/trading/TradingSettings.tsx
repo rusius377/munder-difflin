@@ -29,7 +29,7 @@ function Section({ title, children, intro }: { title: string; intro?: string; ch
   );
 }
 
-function Num({ label, value, step, onChange, suffix }: { label: string; value: number; step?: number; suffix?: string; onChange: (v: number) => void }) {
+export function Num({ label, value, step, onChange, suffix }: { label: string; value: number; step?: number; suffix?: string; onChange: (v: number) => void }) {
   const [text, setText] = useState(String(value));
   // Re-sync only when the value moved for another reason (save, revert) —
   // not on every keystroke, or "0." would snap back to "0" mid-typing.
@@ -48,7 +48,7 @@ function Num({ label, value, step, onChange, suffix }: { label: string; value: n
   );
 }
 
-function Seg<T extends string>({ value, options, label, onChange }: { value: T; options: readonly T[]; label: (v: T) => string; onChange: (v: T) => void }) {
+export function Seg<T extends string>({ value, options, label, onChange }: { value: T; options: readonly T[]; label: (v: T) => string; onChange: (v: T) => void }) {
   return (
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
       {options.map((o) => (
@@ -383,6 +383,11 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
             <input type="checkbox" checked={d.scalping.orderFlow} onChange={(e) => setScalp({ orderFlow: e.target.checked })} />
             {f('orderFlow')}
           </label>
+          <label style={{ ...hint, display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="checkbox" checked={d.scalping.experienceFilter} onChange={(e) => setScalp({ experienceFilter: e.target.checked })} />
+            {f('experienceFilter')}
+          </label>
+          <Num label={f('experienceMinSamples')} value={d.scalping.experienceMinSamples} step={5} onChange={(v) => setScalp({ experienceMinSamples: v })} />
         </div>
       </Section>
 

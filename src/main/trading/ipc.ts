@@ -12,6 +12,10 @@
  *   trading:agents                     every agent's project folder + track record
  *   trading:openAgentFolder            opens one agent's folder (or the agents root)
  *   trading:registerAgentsProject      adds the agents root to the office's projects
+ *   trading:backtest*                  past-chart replays (start / cancel / jobs / results / result / delete)
+ *   trading:experience / experienceClear   what replays taught the scalper, per symbol
+ *   trading:nautilusStatus / nautilusInstall   the NautilusTrader engine (own Python venv)
+ *   'trading:backtest' (event)         job list push · 'trading:nautilus' (event) install log lines
  *   'trading:update' (event)           throttled TradingSnapshot push
  *
  * Automation (config.automation): auto-start on launch, a power-save blocker
@@ -29,6 +33,8 @@ import { createLlmClient } from './llm';
 import { parseAgentId } from './agentProjects';
 import { BinanceFuturesClient, BINANCE_REST, liveKeyPermissions, type FetchLike } from './binance';
 import { connectWebSocket } from './wsClient';
+import { BacktestRunner } from './backtest';
+import { NautilusEnv } from './nautilus';
 import {
   assessLiveKey, normalizeTradingConfig, TRADING_SECRET_KEYS, TRADING_SYMBOLS, type EngineStatus,
   type TradingConfig, type TradingSecretKey, type TradingSecretPresence, type TradingSymbol
@@ -185,6 +191,61 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
   /** Whether the OS launches the app at login (the onboarding sets it; the desk's automation section shows it again). */
   ipcMain.handle('trading:getLoginItem', () => {
     try { return app.getLoginItemSettings().openAtLogin; } catch { return false; }
+  });
+
+  // ── backtests ("과거 차트 리테스트") ─────────────────────────────────────
+  const nautilus = new NautilusEnv(
+    path.join(dataDir(), 'nautilus'),
+    app.isPackaged ? path.join(process.resourcesPath, 'nautilus') : path.join(app.getAppPath(), 'resources', 'nautilus')
+  );
+  const backtests = new BacktestRunner({
+    dataDir: dataDir(),
+    history: engine.history,
+    experience: engine.experience,
+    nautilus,
+    getConfig: () => engine.config,
+    agentReplay: (req, ctl) => engine.runAgentReplay(req, ctl),
+    emit: (jobs) => opts.broadcast('trading:backtest', jobs)
+  });
+  const isSym = (s: unknown) => isSymbol(s) ? s : null;
+
+  ipcMain.handle('trading:backtestStart', (_e: unknown, req: unknown) => {
+    try { return { ok: true, job: backtests.start(req) }; } catch (e) { return { ok: false, error: errMsg(e) }; }
+  });
+  ipcMain.handle('trading:backtestCancel', (_e: unknown, p: unknown) => {
+    const id = (p as { id?: unknown } | null)?.id;
+    if (typeof id === 'string') backtests.cancel(id);
+    return { ok: true };
+  });
+  ipcMain.handle('trading:backtestJobs', () => backtests.list());
+  ipcMain.handle('trading:backtestResults', () => backtests.results());
+  ipcMain.handle('trading:backtestResult', (_e: unknown, p: unknown) => {
+    const id = (p as { id?: unknown } | null)?.id;
+    return typeof id === 'string' ? backtests.result(id) : null;
+  });
+  ipcMain.handle('trading:backtestDelete', (_e: unknown, p: unknown) => {
+    const id = (p as { id?: unknown } | null)?.id;
+    if (typeof id === 'string') backtests.remove(id);
+    return { ok: true };
+  });
+  ipcMain.handle('trading:experience', (_e: unknown, p: unknown) => {
+    const s = isSym((p as { symbol?: unknown } | null)?.symbol);
+    return s ? engine.experience.view(s) : null;
+  });
+  ipcMain.handle('trading:experienceClear', (_e: unknown, p: unknown) => {
+    const s = isSym((p as { symbol?: unknown } | null)?.symbol);
+    if (s) engine.experience.clear(s);
+    return { ok: true };
+  });
+  ipcMain.handle('trading:nautilusStatus', async () => {
+    try { return await nautilus.status(); } catch (e) { return { state: 'error', message: errMsg(e) }; }
+  });
+  ipcMain.handle('trading:nautilusInstall', async () => {
+    try {
+      return await nautilus.install((line) => opts.broadcast('trading:nautilus', line.slice(0, 400)));
+    } catch (e) {
+      return { state: 'error', message: errMsg(e) };
+    }
   });
 
   ipcMain.handle('trading:agents', () => {

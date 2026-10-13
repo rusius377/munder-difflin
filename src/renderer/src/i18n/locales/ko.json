@@ -1417,7 +1417,8 @@
       "trades": "거래내역",
       "log": "로그",
       "settings": "설정",
-      "team": "에이전트 폴더"
+      "team": "에이전트 폴더",
+      "backtest": "백테스트"
     },
     "status": {
       "stopped": "정지",
@@ -1539,7 +1540,8 @@
       "biasPending": "방향 필터 대기 중",
       "biasOff": "꺼짐 (양방향 허용)",
       "committeeAgree": "위원회 {{agree}}/{{responded}} 찬성",
-      "committeeMissed": "위원회 합의 미달 → 관망"
+      "committeeMissed": "위원회 합의 미달 → 관망",
+      "experience": "경험"
     },
     "roles": {
       "technical": "기술적 분석가",
@@ -1751,7 +1753,9 @@
         "consensus": "합의 규칙",
         "agentMaxLeverage": "에이전트 모드 최대 레버리지",
         "orderFlow": "실시간 호가·체결 흐름 읽기 (바이낸스 스트림)",
-        "bigTradeUsdt": "대량 체결 기준"
+        "bigTradeUsdt": "대량 체결 기준",
+        "experienceFilter": "백테스트에서 손해 본 셋업은 진입 안 함 (경험 필터)",
+        "experienceMinSamples": "경험이 진입을 막기 전 필요한 리플레이 거래 수"
       },
       "automationIntro": "바이낸스 API로 주문이 나갈 때 앱이 스스로 하는 일입니다. 데스크는 Munder Difflin이 켜져 있는 동안에만 거래합니다.",
       "autoStartLive": "실거래 환경에서 자동 시작이 켜져 있습니다: 앱을 켤 때마다 실제 자금으로 거래를 다시 시작합니다.",
@@ -1953,6 +1957,128 @@
         "buy": "매도 흡수",
         "sell": "매수 흡수"
       }
+    },
+    "backtest": {
+      "loading": "불러오는 중…",
+      "intro": "지난 바이낸스 차트를 데스크로 다시 돌려 봅니다. 진입마다 손절·익절·청산까지 끝까지 따라가고, 그 결과가 경험으로 쌓입니다. 여기서는 주문이 나가지 않습니다.",
+      "newRun": "새 백테스트",
+      "modes": {
+        "scalping": "스캘핑",
+        "agents": "에이전트 팀"
+      },
+      "engines": {
+        "builtin": "내장 리플레이",
+        "nautilus": "노틸러스 엔진"
+      },
+      "modeHint": {
+        "builtin": "실전 스캘퍼를 바이낸스 체결 테이프(aggTrades)와 ±1% 호가 깊이 위에서 초 단위로 돌립니다. 리스크 규칙, 75배 청산가, 수수료까지 그대로 적용합니다.",
+        "nautilus": "판단은 스캘퍼가, 체결은 노틸러스의 모의 거래소가 과거 체결 하나하나에 맞춰 지연·슬리피지까지 반영해 처리합니다. Python 3.12 이상과 아래의 엔진 설치가 필요합니다.",
+        "agents": "에이전트 팀 전체가 과거 시점에서 판단하고, 거래마다 손절이나 익절까지 앞으로 따라갑니다. 날짜를 옮기고 가격을 바꿔서 모델이 그 뒤에 일어난 일을 기억해 내지 못하게 합니다."
+      },
+      "fromDay": "시작일 (UTC)",
+      "toDay": "종료일 (UTC, 최대 31일 · 체결 테이프는 7일)",
+      "startEquity": "시작 잔고",
+      "leverage": "레버리지",
+      "evalEverySec": "판단 간격",
+      "episodes": "리플레이 시점",
+      "horizonHours": "최대 보유 시간",
+      "useTape": "체결 테이프·호가 깊이 사용 (하루 약 10~30MB 내려받기)",
+      "maskHistory": "모델에게 실제 날짜·가격 숨기기",
+      "learnScalp": "경험으로 쌓기 (거래를 스캘퍼 경험에 반영)",
+      "learnAgents": "경험으로 쌓기 (에이전트 성적표·교훈에 반영)",
+      "agentsCost": "시점마다 에이전트 팀 전체가 한 번씩 돕니다 (총 {{n}}회). 실시간 분석처럼 LLM 사용량이 듭니다.",
+      "start": "백테스트 실행",
+      "queue": "대기열에 추가",
+      "jobs": "진행 중·최근",
+      "states": {
+        "queued": "대기",
+        "loading": "내려받는 중",
+        "running": "실행 중",
+        "done": "완료",
+        "error": "실패",
+        "cancelled": "취소"
+      },
+      "cancel": "취소",
+      "view": "보기",
+      "delete": "삭제",
+      "deleteHint": "스캘퍼 경험에서도 이 거래들을 뺍니다",
+      "missing": "그 결과 파일이 없습니다",
+      "close": "닫기",
+      "results": "저장된 결과",
+      "noResults": "아직 백테스트가 없습니다.",
+      "learned": "경험 반영",
+      "detail": "결과",
+      "byExit": "청산 사유:",
+      "trades": "거래",
+      "showAll": "전체 {{n}}건 보기",
+      "dataLevels": {
+        "tape": "체결 테이프(초)",
+        "candles": "1분봉",
+        "mixed": "테이프+1분봉",
+        "agents": "에이전트 팀"
+      },
+      "cols": {
+        "when": "실행 시각",
+        "run": "구성",
+        "period": "기간",
+        "data": "데이터",
+        "time": "진입 시각",
+        "side": "방향",
+        "decision": "결정",
+        "entry": "진입가",
+        "stop": "손절가",
+        "target": "목표가",
+        "exit": "청산가",
+        "lev": "레버리지",
+        "liq": "청산가(강제)",
+        "pnl": "손익 (USDT)",
+        "reason": "청산 사유",
+        "outcome": "따라간 결과",
+        "horizon": "기간 내 변동",
+        "calls": "에이전트 적중"
+      },
+      "stats": {
+        "trades": "거래 수",
+        "winRate": "승률",
+        "return": "수익률",
+        "netPnl": "순손익",
+        "avgR": "평균 R",
+        "profitFactor": "손익비 계수(PF)",
+        "maxDd": "최대 낙폭",
+        "fees": "낸 수수료",
+        "avgHold": "평균 보유",
+        "liquidations": "강제 청산",
+        "endEquity": "종료 잔고",
+        "beforeFees": "수수료 빼기 전 {{v}} USDT"
+      },
+      "experience": {
+        "title": "스캘퍼 경험",
+        "intro": "경험으로 쌓인 거래를 셋업(방향·추세·신호 강도·변동성·체결 흐름)별로 묶었습니다. 경험 필터를 켜면 {{n}}건 이상 쌓였는데 평균 R이 마이너스인 셋업은 실전에서 진입하지 않습니다.",
+        "off": "설정에서 경험 필터가 꺼져 있습니다. 경험은 쌓이지만 진입을 막지는 않습니다.",
+        "empty": "아직 경험이 없습니다. '경험으로 쌓기'를 켜고 스캘핑 백테스트를 돌려 보세요.",
+        "trades": "거래 {{n}}건",
+        "runs": "백테스트 {{n}}회분",
+        "setup": "셋업",
+        "n": "건수",
+        "veto": "실전 진입 안 함",
+        "clear": "경험 지우기"
+      },
+      "nautilus": {
+        "title": "노틸러스 엔진",
+        "intro": "실제 거래소 수준의 백테스터입니다(주문 매칭·지연·슬리피지). 앱 데이터 폴더 안의 별도 Python 환경에서 돌아가며, 한 번만 설치하면 됩니다(수백 MB, 몇 분 소요).",
+        "states": {
+          "ready": "준비됨",
+          "installing": "설치 중",
+          "not-installed": "미설치",
+          "missing-python": "Python 3.12+ 없음",
+          "error": "오류"
+        },
+        "check": "다시 확인",
+        "install": "노틸러스 설치",
+        "needInstall": "노틸러스 엔진이 아직 준비되지 않았습니다. 아래 엔진 칸을 보세요.",
+        "missingPython": "python.org에서 Python 3.12·3.13·3.14 중 하나를 설치하고(윈도우는 'Add python.exe to PATH' 체크), 앱을 다시 켠 뒤 설치를 누르세요."
+      },
+      "episodeCount": "리플레이할 시점 수"
     }
   }
 }

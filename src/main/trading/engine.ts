@@ -30,6 +30,10 @@ import { Journal, type DayState } from './journal';
 import { fmtPrice } from './indicators';
 import { limitConcurrency, type LlmCall, type LlmClient } from './llm';
 import { FlowTracker, LiveFlowFeed, parseRestAggTrades } from './orderFlow';
+import { ExperienceStore } from './experience';
+import { HistoryStore, type BinaryFetch } from './histData';
+import { featuresAt } from './replay';
+import { restReplayMarket, runAgentReplay } from './agentReplay';
 import type { ScalpInputs } from './marketData';
 import type { WsFactory } from './wsClient';
 import {
@@ -50,6 +54,8 @@ export interface EngineDeps {
   notify?: (title: string, body: string) => void;
   /** WebSocket opener for the live order-flow streams; without it scalping reads flow from REST. */
   wsFactory?: WsFactory;
+  /** Binary downloads (Binance's data archive) for replays; defaults to the global fetch. */
+  fetchBinary?: BinaryFetch;
   now?: () => number;
 }
 
@@ -102,6 +108,10 @@ export class TradingEngine {
   private feed: LiveFlowFeed | null = null;
   /** REST-fed trackers when there is no live feed. */
   private restTrackers: Partial<Record<TradingSymbol, FlowTracker>> = {};
+  /** What past replays taught the scalper (experience.ts). */
+  readonly experience: ExperienceStore;
+  /** Binance's data archive, cached (replays). */
+  readonly history: HistoryStore;
   /** One project folder per agent: instructions, track record, outputs (agentProjects.ts). */
   readonly projects: AgentProjects;
   private scoring = false;
@@ -115,6 +125,11 @@ export class TradingEngine {
     this.market = new MarketData(deps.fetch, { now: deps.now });
     this.snap.trades = this.journal.recentTrades(MAX_TRADES, this.cfg.venue).reverse();
     this.projects = new AgentProjects(path.join(deps.dataDir, 'agents'), () => this.now());
+    this.experience = new ExperienceStore(path.join(deps.dataDir, 'experience'), () => this.now());
+    // Archive downloads are a few to tens of MB; a stalled one must not hang a backtest forever.
+    const fetchBinary = deps.fetchBinary ?? ((url: string) =>
+      (globalThis as unknown as { fetch: (u: string, i?: { signal?: AbortSignal }) => ReturnType<BinaryFetch> }).fetch(url, { signal: AbortSignal.timeout(300_000) }));
+    this.history = new HistoryStore(path.join(deps.dataDir, 'history'), fetchBinary, this.market.client, { now: deps.now });
     this.ensureTeam();
   }
 
@@ -915,10 +930,20 @@ export class TradingEngine {
     // A bias older than two refresh periods is stale: fall back to both sides.
     const b = this.snap.biases[symbol];
     const bias = p.agentBias && b && this.now() - b.updatedAt < 2 * p.biasRefreshMinutes * 60_000 ? b.bias : undefined;
-    const ev = evaluateScalp(inputs, p, bias);
+    let ev = evaluateScalp(inputs, p, bias);
+    // Experience: what past replays say about this very setup. A losing record vetoes the entry.
+    let experience: string | undefined;
+    if (p.experienceFilter && ev.atr > 0) {
+      const side = ev.entry?.side ?? (ev.longScore >= ev.shortScore ? 'LONG' : 'SHORT');
+      try {
+        const v = this.experience.verdict(symbol, side, featuresAt(ev, side, inputs.flow, this.now()), p.experienceMinSamples);
+        experience = v.note;
+        if (v.block && ev.entry) ev = { ...ev, entry: undefined, blocked: v.note };
+      } catch { /* no experience yet */ }
+    }
     this.snap.scalp[symbol] = {
       symbol, longScore: ev.longScore, shortScore: ev.shortScore, trend: ev.trend, atrPct: ev.atrPct,
-      spreadBps: ev.spreadBps, reasons: ev.reasons, blocked: ev.blocked, evaluatedAt: this.now(),
+      spreadBps: ev.spreadBps, reasons: ev.reasons, blocked: ev.blocked, evaluatedAt: this.now(), experience,
       plan: scalpPlan(ev, this.riskContext(symbol, ev.price, 0, p.leverage), p, !this.broker?.brackets(symbol))
     };
     if (!this.broker) return;
@@ -1059,6 +1084,24 @@ export class TradingEngine {
       this.biasBusy.delete(symbol);
       this.emitSoon();
     }
+  }
+
+  // ─── replays ────────────────────────────────────────────────────────────
+
+  /** Agents-mode replay (agentReplay.ts) with this desk's LLM, agent folders and lesson book. */
+  runAgentReplay(req: import('../../shared/trading').BacktestRequest, ctl: { onProgress: (pct: number, phase: string) => void; aborted: () => boolean }) {
+    return runAgentReplay(req, {
+      llm: this.getLlm(),
+      market: restReplayMarket(this.market.client, this.deps.fetch, () => this.now()),
+      history: this.history,
+      cfg: this.cfg,
+      projects: this.projects,
+      addDeskLesson: (symbol, lesson) => this.journal.addLesson(symbol, lesson),
+      writeReport: (symbol, runId, takenAt, text) => this.journal.writeReport(symbol, runId, takenAt, text),
+      onProgress: ctl.onProgress,
+      aborted: ctl.aborted,
+      now: () => this.now()
+    });
   }
 
   // ─── manual actions ────────────────────────────────────────────────────

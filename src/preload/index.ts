@@ -10,11 +10,16 @@ import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
 import type { HeroPayload } from '../shared/heroPayload';
 import type {
-  AgentProjectView, TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
+  AgentProjectView, BacktestJobView, BacktestRequest, BacktestResultView, ExperienceView, NautilusStatusView,
+  TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
 } from '../shared/trading';
 export type {
-  AgentProjectView, TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
+  AgentProjectView, BacktestJobView, BacktestRequest, BacktestResultView, ExperienceView, NautilusStatusView,
+  TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
 } from '../shared/trading';
+
+/** A saved backtest without its trade list (the results list). */
+export type BacktestResultSummary = Omit<BacktestResultView, 'trades' | 'equity' | 'episodes'> & { tradeCount: number };
 export type { HeroPayload } from '../shared/heroPayload';
 import type { ModelCatalog } from '../shared/modelCatalogPayload';
 export type { ModelCatalog, CatalogModel } from '../shared/modelCatalogPayload';
@@ -1327,6 +1332,28 @@ const api = {
     ipcRenderer.invoke('trading:openAgentFolder', id === undefined ? {} : { id }),
   tradingRegisterAgentsProject: (): Promise<{ ok: boolean; path?: string; already?: boolean; error?: string }> =>
     ipcRenderer.invoke('trading:registerAgentsProject'),
+  // Past-chart replays, the scalper's experience and the NautilusTrader engine.
+  tradingBacktestStart: (req: Partial<BacktestRequest>): Promise<{ ok: boolean; job?: BacktestJobView; error?: string }> =>
+    ipcRenderer.invoke('trading:backtestStart', req),
+  tradingBacktestCancel: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('trading:backtestCancel', { id }),
+  tradingBacktestJobs: (): Promise<BacktestJobView[]> => ipcRenderer.invoke('trading:backtestJobs'),
+  tradingBacktestResults: (): Promise<BacktestResultSummary[]> => ipcRenderer.invoke('trading:backtestResults'),
+  tradingBacktestResult: (id: string): Promise<BacktestResultView | null> => ipcRenderer.invoke('trading:backtestResult', { id }),
+  tradingBacktestDelete: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('trading:backtestDelete', { id }),
+  tradingExperience: (symbol: TradingSymbol): Promise<ExperienceView | null> => ipcRenderer.invoke('trading:experience', { symbol }),
+  tradingExperienceClear: (symbol: TradingSymbol): Promise<{ ok: boolean }> => ipcRenderer.invoke('trading:experienceClear', { symbol }),
+  tradingNautilusStatus: (): Promise<NautilusStatusView> => ipcRenderer.invoke('trading:nautilusStatus'),
+  tradingNautilusInstall: (): Promise<NautilusStatusView> => ipcRenderer.invoke('trading:nautilusInstall'),
+  onBacktestUpdate: (cb: (jobs: BacktestJobView[]) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, jobs: BacktestJobView[]) => cb(jobs);
+    ipcRenderer.on('trading:backtest', listener);
+    return () => ipcRenderer.removeListener('trading:backtest', listener);
+  },
+  onNautilusLog: (cb: (line: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, line: string) => cb(line);
+    ipcRenderer.on('trading:nautilus', listener);
+    return () => ipcRenderer.removeListener('trading:nautilus', listener);
+  },
   /** Throttled snapshot push from the engine. Returns an unsubscribe. */
   onTradingUpdate: (cb: (snapshot: TradingSnapshot) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, snapshot: TradingSnapshot) => cb(snapshot);

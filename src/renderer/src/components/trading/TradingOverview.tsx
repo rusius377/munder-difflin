@@ -303,6 +303,7 @@ export function TradingOverview({ snap, cfg }: { snap: TradingSnapshot | null; c
                     </div>
                     {sc.reasons.length > 0 && <div style={hint}>{sc.reasons.join(' · ')}</div>}
                     {sc.blocked && <div style={{ ...hint, color: 'var(--cth-ink-700)' }}>{t('trading.overview.blocked')}: {sc.blocked}</div>}
+                    {sc.experience && sc.experience !== sc.blocked && <div style={hint}>{t('trading.overview.experience')}: {sc.experience}</div>}
                     {sc.plan && !pos && <PlanCard plan={sc.plan} symbol={s} />}
                     {snap?.flow?.[s] && <FlowCard flow={snap.flow[s]!} symbol={s} now={now} />}
                   </>

@@ -6,6 +6,7 @@ import { TradingAgentsView } from './TradingAgentsView';
 import { TradingTrades, TradingLog } from './TradingTrades';
 import { TradingSettings } from './TradingSettings';
 import { TradingTeam } from './TradingTeam';
+import { TradingBacktest } from './TradingBacktest';
 import { chip, hint, useTradingSnapshot } from './tradingUi';
 import type { EngineStatus, TradingConfig, TradingSymbol } from '@shared/trading';
 
@@ -16,8 +17,8 @@ import type { EngineStatus, TradingConfig, TradingSymbol } from '@shared/trading
  * commands. Orders never originate here.
  */
 
-type SubTab = 'overview' | 'agents' | 'team' | 'trades' | 'log' | 'settings';
-const SUBTABS: SubTab[] = ['overview', 'agents', 'team', 'trades', 'log', 'settings'];
+type SubTab = 'overview' | 'agents' | 'team' | 'backtest' | 'trades' | 'log' | 'settings';
+const SUBTABS: SubTab[] = ['overview', 'agents', 'team', 'backtest', 'trades', 'log', 'settings'];
 
 const STATUS_BG: Record<EngineStatus, string> = {
   stopped: 'var(--cth-status-idle)',
@@ -122,6 +123,7 @@ export function TradingTab() {
         {sub === 'overview' && <TradingOverview snap={snap} cfg={cfg} />}
         {sub === 'agents' && <TradingAgentsView snap={snap} />}
         {sub === 'team' && <TradingTeam snap={snap} />}
+        {sub === 'backtest' && <TradingBacktest cfg={cfg} />}
         {sub === 'trades' && <TradingTrades snap={snap} />}
         {sub === 'log' && <TradingLog snap={snap} />}
         {sub === 'settings' && (

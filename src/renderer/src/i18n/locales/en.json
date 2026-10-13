@@ -1417,7 +1417,8 @@
       "trades": "trades",
       "log": "log",
       "settings": "settings",
-      "team": "agent folders"
+      "team": "agent folders",
+      "backtest": "Backtest"
     },
     "status": {
       "stopped": "stopped",
@@ -1539,7 +1540,8 @@
       "biasPending": "waiting for the bias desk",
       "biasOff": "off (both sides allowed)",
       "committeeAgree": "committee {{agree}}/{{responded}} agreed",
-      "committeeMissed": "committee: no consensus → hold"
+      "committeeMissed": "committee: no consensus → hold",
+      "experience": "Experience"
     },
     "roles": {
       "technical": "Technical analyst",
@@ -1751,7 +1753,9 @@
         "consensus": "consensus rule",
         "agentMaxLeverage": "agent-mode max leverage",
         "orderFlow": "read the live tape and book (Binance streams)",
-        "bigTradeUsdt": "big trade size"
+        "bigTradeUsdt": "big trade size",
+        "experienceFilter": "Skip setups that lost money in backtests (experience filter)",
+        "experienceMinSamples": "Replayed trades needed before experience can veto"
       },
       "automationIntro": "What the app does on its own once orders run through the Binance API. The desk only trades while Munder Difflin is open.",
       "autoStartLive": "Auto-start is on for the LIVE venue: every app launch resumes trading real money.",
@@ -1953,6 +1957,128 @@
         "buy": "selling absorbed",
         "sell": "buying absorbed"
       }
+    },
+    "backtest": {
+      "loading": "Loading…",
+      "intro": "Replay past Binance charts through the desk: every entry is carried to its stop, target or liquidation, and the results become experience. Nothing here places an order.",
+      "newRun": "New run",
+      "modes": {
+        "scalping": "Scalping",
+        "agents": "Agent team"
+      },
+      "engines": {
+        "builtin": "Built-in replay",
+        "nautilus": "NautilusTrader"
+      },
+      "modeHint": {
+        "builtin": "The live scalper, second by second on Binance's trade tape (aggTrades) and ±1% book depth, with your risk rules, 75x liquidation and fees.",
+        "nautilus": "The scalper decides; NautilusTrader's simulated exchange fills the orders against every historical trade, with latency and slippage. Needs Python 3.12+ and the engine installed below.",
+        "agents": "The whole agent team decides at past moments, each trade walked forward to its stop or target. Dates are shifted and prices scaled so the models cannot recall what happened next."
+      },
+      "fromDay": "From (UTC)",
+      "toDay": "To (UTC; up to 31 days, 7 with the tape)",
+      "startEquity": "Starting balance",
+      "leverage": "Leverage",
+      "evalEverySec": "Evaluate every",
+      "episodes": "Replayed moments",
+      "horizonHours": "Longest hold",
+      "useTape": "Use the trade tape and book depth (downloads ~10–30 MB a day)",
+      "maskHistory": "Hide real dates and prices from the models",
+      "learnScalp": "Learn from it (add the trades to the scalper's experience)",
+      "learnAgents": "Learn from it (agents' track records and lessons)",
+      "agentsCost": "Each moment is a full agent-team run ({{n}} runs) — it uses your LLM like live analysis does.",
+      "start": "Run backtest",
+      "queue": "Add to queue",
+      "jobs": "Running and recent",
+      "states": {
+        "queued": "Queued",
+        "loading": "Downloading",
+        "running": "Running",
+        "done": "Done",
+        "error": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "cancel": "Cancel",
+      "view": "View",
+      "delete": "Delete",
+      "deleteHint": "Also removes its trades from the scalper's experience",
+      "missing": "That result is no longer on disk",
+      "close": "Close",
+      "results": "Saved results",
+      "noResults": "No backtests yet.",
+      "learned": "Learned",
+      "detail": "Result",
+      "byExit": "Exits:",
+      "trades": "Trades",
+      "showAll": "Show all {{n}}",
+      "dataLevels": {
+        "tape": "Tape (seconds)",
+        "candles": "1m candles",
+        "mixed": "Tape + candles",
+        "agents": "Agent team"
+      },
+      "cols": {
+        "when": "Run at",
+        "run": "Run",
+        "period": "Period",
+        "data": "Data",
+        "time": "Entry time",
+        "side": "Side",
+        "decision": "Decision",
+        "entry": "Entry",
+        "stop": "Stop",
+        "target": "Target",
+        "exit": "Exit",
+        "lev": "Lev.",
+        "liq": "Liq. price",
+        "pnl": "PnL (USDT)",
+        "reason": "Exit reason",
+        "outcome": "Walked trade",
+        "horizon": "Move over horizon",
+        "calls": "Agent calls hit"
+      },
+      "stats": {
+        "trades": "Trades",
+        "winRate": "Win rate",
+        "return": "Return",
+        "netPnl": "Net PnL",
+        "avgR": "Avg R",
+        "profitFactor": "Profit factor",
+        "maxDd": "Max drawdown",
+        "fees": "Fees paid",
+        "avgHold": "Avg hold",
+        "liquidations": "Liquidations",
+        "endEquity": "Ending balance",
+        "beforeFees": "{{v}} USDT before fees"
+      },
+      "experience": {
+        "title": "Scalper experience",
+        "intro": "Learned trades grouped by setup (side, trend, signal strength, volatility, order flow). With the experience filter on, a setup with at least {{n}} trades and a negative average R is skipped live.",
+        "off": "The experience filter is off in Settings — experience is collected but does not block entries.",
+        "empty": "No experience yet — run a scalping backtest with “learn” on.",
+        "trades": "{{n}} trades",
+        "runs": "from {{n}} backtests",
+        "setup": "Setup",
+        "n": "Trades",
+        "veto": "Skipped live",
+        "clear": "Clear experience"
+      },
+      "nautilus": {
+        "title": "NautilusTrader engine",
+        "intro": "An exchange-grade backtester (order matching, latency, slippage). It runs in its own Python environment under the app's data folder; install once (a few hundred MB, several minutes).",
+        "states": {
+          "ready": "Ready",
+          "installing": "Installing",
+          "not-installed": "Not installed",
+          "missing-python": "Python 3.12+ missing",
+          "error": "Error"
+        },
+        "check": "Check again",
+        "install": "Install NautilusTrader",
+        "needInstall": "The NautilusTrader engine is not ready yet — see the engine section below.",
+        "missingPython": "Install Python 3.12, 3.13 or 3.14 from python.org (on Windows tick “Add python.exe to PATH”), restart the app, then press Install."
+      },
+      "episodeCount": "Moments to replay"
     }
   }
 }

@@ -60,6 +60,8 @@ export interface Opinion {
   /** Signed % change from price to priceAfter. */
   movePct?: number;
   hit?: boolean;
+  /** Made in a historical replay (training), not live. `ts` is the replayed moment. */
+  replay?: boolean;
 }
 
 interface AgentRecord {
@@ -296,8 +298,9 @@ export class AgentProjects {
     return o;
   }
 
-  stats(id: string): { opinions: number; scored: number; hits: number; hitRate: number | null; avgEdgeBps: number | null; pending: number; last?: Opinion } {
-    const ops = this.load(id).opinions;
+  stats(id: string, before?: number): { opinions: number; scored: number; hits: number; hitRate: number | null; avgEdgeBps: number | null; pending: number; last?: Opinion } {
+    // `before`: only calls whose outcome was known by then (a replay must not see later results).
+    const ops = this.load(id).opinions.filter((o) => before === undefined || o.ts + o.horizonMs <= before);
     const scored = ops.filter((o) => o.scoredAt !== undefined && o.movePct !== undefined && voteDirection(o.vote) !== 0);
     const hits = scored.filter((o) => o.hit).length;
     const edges = scored.map((o) => (o.movePct ?? 0) * voteDirection(o.vote) * 100);
@@ -321,11 +324,12 @@ export class AgentProjects {
   private scorecard(ref: Pick<AgentRef, 'role' | 'persona' | 'lead'>, rec: AgentRecord): string {
     const s = this.stats(rec.id);
     const rows = rec.opinions.slice(-30).reverse().map((o) =>
-      `| ${kst(o.ts)} | ${o.symbol} | ${voteKo(o.vote)} | ${o.confidence !== null ? o.confidence.toFixed(2) : '-'} | ${o.price} | ${this.outcome(o)} |`);
+      `| ${kst(o.ts)}${o.replay ? ' (리플레이)' : ''} | ${o.symbol} | ${voteKo(o.vote)} | ${o.confidence !== null ? o.confidence.toFixed(2) : '-'} | ${o.price} | ${this.outcome(o)} |`);
+    const replays = rec.opinions.filter((o) => o.replay).length;
     return [
       `# ${agentTitle(ref)} — 성적표`,
       '',
-      `- 기록된 판단: ${s.opinions}건 · 채점된 방향 판단: ${s.scored}건 · 채점 대기: ${s.pending}건`,
+      `- 기록된 판단: ${s.opinions}건(과거 리플레이 훈련 ${replays}건 포함) · 채점된 방향 판단: ${s.scored}건 · 채점 대기: ${s.pending}건`,
       `- 적중률: ${s.hitRate !== null ? `${(s.hitRate * 100).toFixed(0)}% (${s.hits}/${s.scored})` : '아직 없음'}`,
       `- 판단 방향 평균 변동: ${s.avgEdgeBps !== null ? pct(s.avgEdgeBps / 100) : '아직 없음'}`,
       '',
@@ -380,10 +384,13 @@ export class AgentProjects {
    * last calls on this symbol and how they turned out, and the trades it voted
    * on. Empty until it has a record.
    */
-  memoryBlock(id: string, symbol: TradingSymbol): string {
-    const s = this.stats(id);
-    const recent = this.load(id).opinions.filter((o) => o.symbol === symbol && o.vote).slice(-5);
-    const lessons = this.lessons(id, 3);
+  memoryBlock(id: string, symbol: TradingSymbol, opts: { before?: number; relative?: boolean } = {}): string {
+    const s = this.stats(id, opts.before);
+    // A replay must not see calls (or trade lessons) from after the moment it replays.
+    const recent = this.load(id).opinions
+      .filter((o) => o.symbol === symbol && o.vote && (opts.before === undefined || o.ts + o.horizonMs <= opts.before))
+      .slice(-5);
+    const lessons = opts.before === undefined ? this.lessons(id, 3) : [];
     if (!recent.length && !lessons.length) return '';
     const lines = ['[너의 지난 판단 기록 — 너의 프로젝트 폴더에서]'];
     if (s.scored) {
@@ -391,7 +398,10 @@ export class AgentProjects {
     }
     if (recent.length) {
       lines.push(`- 최근 ${symbol} 판단:`);
-      for (const o of recent) lines.push(`  - ${kst(o.ts)} KST ${voteKo(o.vote)}${o.confidence !== null ? `(${o.confidence.toFixed(2)})` : ''} → ${this.outcome(o)}`);
+      for (const o of recent) {
+        const when = opts.relative && opts.before !== undefined ? `${Math.max(1, Math.round((opts.before - o.ts) / 3_600_000))}시간 전` : `${kst(o.ts)} KST`;
+        lines.push(`  - ${when} ${voteKo(o.vote)}${o.confidence !== null ? `(${o.confidence.toFixed(2)})` : ''} → ${this.outcome(o)}`);
+      }
     }
     if (lessons.length) {
       lines.push('- 네가 투표한 거래의 결과:');

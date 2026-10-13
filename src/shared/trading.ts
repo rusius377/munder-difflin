@@ -155,6 +155,10 @@ export interface ScalpingSettings {
   orderFlow: boolean;
   /** A trade at or above this notional (USDT) counts as a big trade. */
   bigTradeUsdt: number;
+  /** Skip setups that lost money in past replays (experience.ts). */
+  experienceFilter: boolean;
+  /** Replayed trades a setup needs before its experience can veto an entry. */
+  experienceMinSamples: number;
 }
 
 /**
@@ -345,7 +349,9 @@ export function defaultTradingConfig(): TradingConfig {
       agentBias: true,
       biasRefreshMinutes: 15,
       orderFlow: true,
-      bigTradeUsdt: 100_000
+      bigTradeUsdt: 100_000,
+      experienceFilter: true,
+      experienceMinSamples: 20
     },
     teams: {
       ...TEAM_PRESETS.standard,
@@ -472,7 +478,9 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
     agentBias: typeof sc.agentBias === 'boolean' ? sc.agentBias : d.scalping.agentBias,
     biasRefreshMinutes: clampInt(sc.biasRefreshMinutes, 5, 240, d.scalping.biasRefreshMinutes),
     orderFlow: typeof sc.orderFlow === 'boolean' ? sc.orderFlow : d.scalping.orderFlow,
-    bigTradeUsdt: clampNum(sc.bigTradeUsdt, 1_000, 10_000_000, d.scalping.bigTradeUsdt)
+    bigTradeUsdt: clampNum(sc.bigTradeUsdt, 1_000, 10_000_000, d.scalping.bigTradeUsdt),
+    experienceFilter: typeof sc.experienceFilter === 'boolean' ? sc.experienceFilter : d.scalping.experienceFilter,
+    experienceMinSamples: clampInt(sc.experienceMinSamples, 5, 500, d.scalping.experienceMinSamples)
   };
   if (scalping.emaSlow <= scalping.emaFast) scalping.emaSlow = scalping.emaFast + 1;
   if (scalping.maxAtrPct <= scalping.minAtrPct) scalping.maxAtrPct = scalping.minAtrPct + 0.05;
@@ -920,6 +928,8 @@ export interface ScalpView {
   evaluatedAt: number;
   /** Trade card at the scalping leverage. */
   plan?: ScalpPlanView;
+  /** What past replays say about the current setup (Korean). */
+  experience?: string;
 }
 
 /** Live order flow for one symbol (see main/trading/orderFlow.ts). */
@@ -1017,6 +1027,201 @@ export function emptySnapshot(cfg: TradingConfig): TradingSnapshot {
     logs: [],
     nextRunAt: {}
   };
+}
+
+// ─── backtests & experience ──────────────────────────────────────────────────
+
+/** Market conditions at a replayed entry — what the experience memory buckets on. */
+export interface TradeFeatures {
+  trendAligned: 'with' | 'flat' | 'against';
+  score: number;
+  atrPct: number;
+  flow: 'with' | 'against' | 'neutral' | 'none';
+  hourUtc: number;
+}
+
+export interface BacktestTrade {
+  side: Side;
+  entryTime: number;
+  exitTime: number;
+  entryPrice: number;
+  exitPrice: number;
+  stopLoss: number;
+  takeProfit: number;
+  quantity: number;
+  leverage: number;
+  liquidationPrice: number;
+  margin: number;
+  pnl: number;
+  /** pnl / planned risk (fees and slippage included in the plan). */
+  pnlR: number;
+  /** pnl / margin, %. */
+  roe: number;
+  fees: number;
+  /** Korean: 손절, 익절, 본전 손절, 시간 청산, 강한 반대 신호, 강제 청산, 기간 종료. */
+  exitReason: string;
+  features: TradeFeatures;
+}
+
+export interface BacktestStats {
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number | null;
+  netPnl: number;
+  returnPct: number;
+  grossProfit: number;
+  grossLoss: number;
+  profitFactor: number | null;
+  avgR: number | null;
+  maxDrawdownPct: number;
+  avgHoldMin: number | null;
+  fees: number;
+  liquidations: number;
+  longs: number;
+  shorts: number;
+  byExit: Record<string, number>;
+  endEquity: number;
+}
+
+export type BacktestMode = 'scalping' | 'agents';
+/** builtin = the desk's own replay; nautilus = NautilusTrader executes the desk's signals on the tape. */
+export type BacktestEngine = 'builtin' | 'nautilus';
+
+export interface BacktestRequest {
+  mode: BacktestMode;
+  engine: BacktestEngine;
+  symbol: TradingSymbol;
+  /** UTC days, inclusive (YYYY-MM-DD). */
+  fromDay: string;
+  toDay: string;
+  /** Download the tape (aggTrades) and book depth; off = 1-minute candles only. */
+  useTape: boolean;
+  /** Seconds between scalper evaluations on tape days. */
+  evalEverySec: number;
+  /** Scalping leverage for the replay (75 by default). */
+  leverage: number;
+  startEquity: number;
+  /** Feed the outcome back: scalper experience buckets, agent track records and lessons. */
+  learn: boolean;
+  /** Agents mode: moments to replay, each a full pipeline run. */
+  episodes: number;
+  /** Agents mode: longest an episode's trade is held. */
+  horizonHours: number;
+  /** Agents mode: shift dates and scale prices so the models cannot recall what happened. */
+  maskHistory: boolean;
+}
+
+export const BACKTEST_MAX_DAYS = 31;
+export const BACKTEST_MAX_TAPE_DAYS = 7;
+
+export function defaultBacktestRequest(cfg: TradingConfig): BacktestRequest {
+  const day = (offset: number) => new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
+  return {
+    mode: 'scalping', engine: 'builtin', symbol: cfg.symbols[0] ?? 'BTCUSDT',
+    fromDay: day(3), toDay: day(2), useTape: true, evalEverySec: cfg.scalping.pollSeconds,
+    leverage: cfg.scalping.leverage, startEquity: cfg.risk.paperBalanceUsdt, learn: true,
+    episodes: 4, horizonHours: 24, maskHistory: true
+  };
+}
+
+export function normalizeBacktestRequest(input: unknown, cfg: TradingConfig): BacktestRequest {
+  const d = defaultBacktestRequest(cfg);
+  const i = obj(input);
+  const dayOk = (v: unknown, fb: string) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`)) ? v : fb);
+  let fromDay = dayOk(i.fromDay, d.fromDay);
+  let toDay = dayOk(i.toDay, d.toDay);
+  if (toDay < fromDay) [fromDay, toDay] = [toDay, fromDay];
+  const mode = oneOf(i.mode, ['scalping', 'agents'] as const, d.mode);
+  const engine = oneOf(i.engine, ['builtin', 'nautilus'] as const, d.engine);
+  const useTape = typeof i.useTape === 'boolean' ? i.useTape : d.useTape;
+  // At most 31 days per run; 7 with the tape (every trade of the period is held in memory).
+  const maxDays = mode === 'scalping' && (useTape || engine === 'nautilus') ? BACKTEST_MAX_TAPE_DAYS : BACKTEST_MAX_DAYS;
+  const maxTo = new Date(Date.parse(`${fromDay}T00:00:00Z`) + (maxDays - 1) * 86_400_000).toISOString().slice(0, 10);
+  if (toDay > maxTo) toDay = maxTo;
+  return {
+    mode, engine,
+    symbol: oneOf(i.symbol, TRADING_SYMBOLS, d.symbol),
+    fromDay, toDay,
+    useTape,
+    evalEverySec: clampInt(i.evalEverySec, 1, 60, d.evalEverySec),
+    leverage: clampInt(i.leverage, 1, 125, d.leverage),
+    startEquity: clampNum(i.startEquity, 10, 10_000_000, d.startEquity),
+    learn: typeof i.learn === 'boolean' ? i.learn : d.learn,
+    episodes: clampInt(i.episodes, 1, 30, d.episodes),
+    horizonHours: clampInt(i.horizonHours, 1, 168, d.horizonHours),
+    maskHistory: typeof i.maskHistory === 'boolean' ? i.maskHistory : d.maskHistory
+  };
+}
+
+/** One replayed moment in agents mode. */
+export interface AgentEpisodeView {
+  /** Real time of the moment (the agents may have seen a shifted one). */
+  t: number;
+  rating: Rating;
+  action: TradeAction;
+  confidence: number;
+  entryPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  /** The trade the decision would have made, walked forward on 1-minute candles. */
+  outcome: null | { exitTime: number; exitPrice: number; reason: string; movePct: number; r: number | null };
+  /** Price move over the scoring horizon, % (for HOLD decisions too). */
+  horizonMovePct: number | null;
+  /** Directional calls made by agents in the run, and how many matched the horizon move. */
+  calls: number;
+  hits: number;
+  error?: string;
+  reportPath?: string;
+}
+
+export interface BacktestResultView {
+  id: string;
+  createdAt: number;
+  request: BacktestRequest;
+  engine: BacktestEngine;
+  dataLevel: 'tape' | 'candles' | 'mixed' | 'agents';
+  stats: BacktestStats;
+  trades: BacktestTrade[];
+  equity: Array<[number, number]>;
+  episodes?: AgentEpisodeView[];
+  notes: string[];
+  /** The result was added to the scalper's experience / the agents' records. */
+  learned: boolean;
+}
+
+export type BacktestJobState = 'queued' | 'loading' | 'running' | 'done' | 'error' | 'cancelled';
+
+export interface BacktestJobView {
+  id: string;
+  request: BacktestRequest;
+  state: BacktestJobState;
+  /** Korean, what is happening now. */
+  phase: string;
+  /** 0–1. */
+  pct: number;
+  startedAt: number;
+  finishedAt?: number;
+  error?: string;
+  /** Short result line when done. */
+  summary?: { trades: number; winRate: number | null; returnPct: number; avgR: number | null };
+}
+
+export interface ExperienceBucketView { key: string; label: string; n: number; winRate: number; avgR: number }
+
+export interface ExperienceView {
+  symbol: TradingSymbol;
+  runs: Array<{ id: string; from: number; to: number; createdAt: number; engine: string; trades: number }>;
+  trades: number;
+  buckets: ExperienceBucketView[];
+}
+
+/** Whether the NautilusTrader engine can run on this machine. */
+export interface NautilusStatusView {
+  state: 'missing-python' | 'not-installed' | 'installing' | 'ready' | 'error';
+  python?: string;
+  version?: string;
+  message?: string;
 }
 
 /** Names of the secrets the desk keeps (values never cross IPC back to the renderer). */

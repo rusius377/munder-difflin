@@ -529,6 +529,12 @@ agent "bias desk". Every team can seat several agents with different specialties
 and traders' reports, while the portfolio committee and the bias panel vote and code tallies the votes under a
 consensus rule. Each agent has its own project folder (its `CLAUDE.md` instructions, a scorecard of its calls
 checked against the market, and the trades it voted on), and is reminded of its own record before it answers.
+Scalping reads Binance's live order book and trade tape over WebSocket (CVD, big trades, imbalance, walls) and
+shows a 75x trade card (entry, stop, target, reward:risk after fees, liquidation price, ROE). A backtest tab replays
+past charts from Binance's data archive through the live scalper second by second — or through
+[NautilusTrader](https://github.com/nautechsystems/nautilus_trader), installed on demand into its own Python venv,
+as the execution simulator — and replays past moments through the whole agent team with dates and prices masked;
+results become the scalper's experience (losing setups are skipped live) and the agents' track records.
 Paper trading by default; Binance demo and live are opt-in, and a code-enforced risk engine
 sizes every order from its stop. Reports are written in Korean. Guides (Korean): features in
 [`docs/TRADING.ko.md`](./docs/TRADING.ko.md), install-to-live-trading steps in [`docs/TRADING-SETUP.ko.md`](./docs/TRADING-SETUP.ko.md).

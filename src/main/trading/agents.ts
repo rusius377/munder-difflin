@@ -79,6 +79,12 @@ export interface PipelineInput {
   riskRounds: number;
   /** Headcount per team. Omitted fields = one agent per role (the original graph). */
   teams?: Partial<PipelineTeams>;
+  /**
+   * Hidden-session folder name inside each agent's folder (default: the
+   * symbol). Replays use their own, so they never share a session folder —
+   * and its newest transcript — with a live run of the same agent.
+   */
+  sessionKey?: string;
 }
 
 export interface PipelineResult {
@@ -168,9 +174,9 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
     }
     try {
       return await deps.llm.complete({
-        role: `${key}-${ctx.symbol}`, tier, prompt: p.prompt,
+        role: `${key}-${input.sessionKey ?? ctx.symbol}`, tier, prompt: p.prompt,
         system: extra.memory ? `${p.system}\n\n${extra.memory}` : p.system,
-        ...(extra.workdir ? { workdir: extra.workdir, sessionKey: ctx.symbol } : {}),
+        ...(extra.workdir ? { workdir: extra.workdir, sessionKey: input.sessionKey ?? ctx.symbol } : {}),
         ...(extra.instructions ? { instructions: extra.instructions } : {})
       });
     } catch (e) {

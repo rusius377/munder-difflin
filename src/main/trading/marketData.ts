@@ -367,31 +367,52 @@ export class MarketData {
       want.sentiment ? settle('공포탐욕지수', fetchFearGreed(this.fetchImpl, 7), [] as FearGreedPoint[]) : Promise.resolve([] as FearGreedPoint[])
     ]);
     if (!k1h.length && !k4h.length) throw new Error(`${symbol} 캔들 데이터를 가져오지 못했습니다 (${notes.join('; ')})`);
-
-    const tf: Record<string, TfSummary> = {};
-    for (const [interval, k] of [['15m', k15], ['1h', k1h], ['4h', k4h], ['1d', k1d]] as const) {
-      if (k.length) tf[interval] = summarizeTimeframe(interval, k);
-    }
-    const deriv = summarizeDerivatives({ premium, ticker, funding, oiHist, globalLsr, topLsr, taker, depth });
-    const price = ticker?.lastPrice || k1h[k1h.length - 1]?.close || premium?.markPrice || 0;
-    const takenAt = this.now();
-    const tfs = ['15m', '1h', '4h', '1d'].map((i) => tf[i]).filter(Boolean);
-    return {
-      symbol,
-      takenAt,
-      price,
-      markPrice: premium?.markPrice ?? price,
-      fundingRate: premium?.lastFundingRate ?? 0,
-      change24hPct: ticker?.priceChangePercent ?? null,
-      verified: formatVerifiedBlock(symbol, takenAt, price, deriv, tf),
-      technical: formatTechnicalBlock(symbol, tfs, k1h.slice(-12), '1h'),
-      derivatives: formatDerivativesBlock(symbol, deriv),
-      news: formatNewsBlock(symbol, news),
-      sentiment: formatSentimentBlock(symbol, fng, deriv, news),
-      tf,
-      deriv,
-      notes
-    };
+    return buildAnalysisSnapshot(symbol, this.now(), { k15, k1h, k4h, k1d, premium, ticker, funding, oiHist, globalLsr, topLsr, taker, depth, news, fng }, notes);
   }
+}
+
+export interface SnapshotInputs {
+  k15: Kline[];
+  k1h: Kline[];
+  k4h: Kline[];
+  k1d: Kline[];
+  premium: PremiumIndex | null;
+  ticker: Ticker24h | null;
+  funding: FundingPoint[];
+  oiHist: OiPoint[];
+  globalLsr: RatioPoint[];
+  topLsr: RatioPoint[];
+  taker: RatioPoint[];
+  depth: Depth | null;
+  news: NewsBundle;
+  fng: FearGreedPoint[];
+}
+
+/** The analysts' text blocks from raw market inputs (live fetch or a historical replay). */
+export function buildAnalysisSnapshot(symbol: TradingSymbol, takenAt: number, i: SnapshotInputs, notes: string[]): AnalysisSnapshot {
+  const { k15, k1h, k4h, k1d, premium, ticker, funding, oiHist, globalLsr, topLsr, taker, depth, news, fng } = i;
+  const tf: Record<string, TfSummary> = {};
+  for (const [interval, k] of [['15m', k15], ['1h', k1h], ['4h', k4h], ['1d', k1d]] as const) {
+    if (k.length) tf[interval] = summarizeTimeframe(interval, k);
+  }
+  const deriv = summarizeDerivatives({ premium, ticker, funding, oiHist, globalLsr, topLsr, taker, depth });
+  const price = ticker?.lastPrice || k1h[k1h.length - 1]?.close || premium?.markPrice || 0;
+  const tfs = ['15m', '1h', '4h', '1d'].map((x) => tf[x]).filter(Boolean);
+  return {
+    symbol,
+    takenAt,
+    price,
+    markPrice: premium?.markPrice ?? price,
+    fundingRate: premium?.lastFundingRate ?? 0,
+    change24hPct: ticker?.priceChangePercent ?? null,
+    verified: formatVerifiedBlock(symbol, takenAt, price, deriv, tf),
+    technical: formatTechnicalBlock(symbol, tfs, k1h.slice(-12), '1h'),
+    derivatives: formatDerivativesBlock(symbol, deriv),
+    news: formatNewsBlock(symbol, news),
+    sentiment: formatSentimentBlock(symbol, fng, deriv, news),
+    tf,
+    deriv,
+    notes
+  };
 }
 
