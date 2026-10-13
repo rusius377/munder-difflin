@@ -77,7 +77,12 @@ export interface RiskSettings {
   paperBalanceUsdt: number;
   /** Max loss per trade if the stop is hit, as % of equity. */
   riskPerTradePct: number;
-  /** Hard leverage ceiling. A model asking for more is clamped. */
+  /**
+   * Hard leverage ceiling for every mode (Binance allows up to 125x on
+   * BTC/ETH in the first notional tier). Anything asking for more is clamped,
+   * and the risk engine lowers it further when the exchange tier or the
+   * liquidation distance demands it.
+   */
   maxLeverage: number;
   /** Position notional ceiling as % of equity (300 = 3× equity). */
   maxNotionalPct: number;
@@ -95,6 +100,8 @@ export interface RiskSettings {
 export interface AgentModeSettings {
   /** Minutes between full pipeline runs per symbol. */
   intervalMinutes: number;
+  /** Leverage ceiling for agent decisions (≤ risk.maxLeverage). Agent trades hold for hours with wide stops. */
+  maxLeverage: number;
   analysts: AnalystKey[];
   /** Bull/bear rounds (TradingAgents `max_debate_rounds`). */
   debateRounds: number;
@@ -243,7 +250,8 @@ export interface AutomationSettings {
 }
 
 export interface TradingConfig {
-  version: 1;
+  /** 2: scalping at 75x by default, separate agent-mode leverage ceiling. */
+  version: 2;
   mode: TradingMode;
   symbols: TradingSymbol[];
   venue: ExecutionVenue;
@@ -274,7 +282,7 @@ export const DEFAULT_LLM_MODELS: Record<LlmProvider, { quick: string; deep: stri
 
 export function defaultTradingConfig(): TradingConfig {
   return {
-    version: 1,
+    version: 2,
     mode: 'agents',
     symbols: ['BTCUSDT', 'ETHUSDT'],
     venue: 'paper',
@@ -289,7 +297,7 @@ export function defaultTradingConfig(): TradingConfig {
     risk: {
       paperBalanceUsdt: 10_000,
       riskPerTradePct: 1,
-      maxLeverage: 10,
+      maxLeverage: 75,
       maxNotionalPct: 300,
       dailyLossLimitPct: 4,
       maxConsecutiveLosses: 4,
@@ -299,6 +307,7 @@ export function defaultTradingConfig(): TradingConfig {
     },
     agents: {
       intervalMinutes: 60,
+      maxLeverage: 10,
       analysts: ['technical', 'derivatives', 'news', 'sentiment'],
       debateRounds: 1,
       riskRounds: 1,
@@ -313,7 +322,7 @@ export function defaultTradingConfig(): TradingConfig {
       pollSeconds: 5,
       timeframe: '1m',
       trendTimeframe: '5m',
-      leverage: 10,
+      leverage: 75,
       emaFast: 9,
       emaSlow: 21,
       trendEma: 50,
@@ -422,14 +431,23 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
         .slice(0, 12)
     : d.agents.newsFeeds;
 
-  const maxLeverage = clampInt(risk.maxLeverage, 1, 50, d.risk.maxLeverage);
+  // Version 1 configs predate 75x scalping: their single leverage ceiling was
+  // the agent-mode ceiling. Keep it there, and open the global ceiling and the
+  // scalper to the 75x default (sizing still comes from the stop, so the money
+  // at risk per trade does not change — only margin and liquidation distance).
+  const legacy = i.version !== undefined && i.version !== 2;
+  const legacyMax = legacy ? clampInt(risk.maxLeverage, 1, 125, 10) : null;
+  const maxLeverage = legacy
+    ? Math.max(legacyMax as number, d.risk.maxLeverage)
+    : clampInt(risk.maxLeverage, 1, 125, d.risk.maxLeverage);
+  const agentMaxLeverage = Math.min(maxLeverage, legacy ? (legacyMax as number) : clampInt(ag.maxLeverage, 1, 125, d.agents.maxLeverage));
 
   const slAtr = clampNum(sc.slAtr, 0.3, 5, d.scalping.slAtr);
   const scalping: ScalpingSettings = {
     pollSeconds: clampInt(sc.pollSeconds, 2, 60, d.scalping.pollSeconds),
     timeframe: oneOf(sc.timeframe, ['1m', '3m', '5m'] as const, d.scalping.timeframe),
     trendTimeframe: oneOf(sc.trendTimeframe, ['5m', '15m', '1h'] as const, d.scalping.trendTimeframe),
-    leverage: Math.min(maxLeverage, clampInt(sc.leverage, 1, 50, d.scalping.leverage)),
+    leverage: Math.min(maxLeverage, legacy ? d.scalping.leverage : clampInt(sc.leverage, 1, 125, d.scalping.leverage)),
     emaFast: clampInt(sc.emaFast, 2, 50, d.scalping.emaFast),
     emaSlow: clampInt(sc.emaSlow, 3, 100, d.scalping.emaSlow),
     trendEma: clampInt(sc.trendEma, 10, 200, d.scalping.trendEma),
@@ -452,7 +470,7 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
   if (scalping.maxAtrPct <= scalping.minAtrPct) scalping.maxAtrPct = scalping.minAtrPct + 0.05;
 
   return {
-    version: 1,
+    version: 2,
     mode: oneOf(i.mode, TRADING_MODES, d.mode),
     symbols: symbols.length ? symbols : d.symbols,
     venue,
@@ -477,12 +495,13 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
     },
     agents: {
       intervalMinutes: clampInt(ag.intervalMinutes, 15, 1440, d.agents.intervalMinutes),
+      maxLeverage: agentMaxLeverage,
       analysts: analysts.length ? analysts : d.agents.analysts,
       debateRounds: clampInt(ag.debateRounds, 1, 5, d.agents.debateRounds),
       riskRounds: clampInt(ag.riskRounds, 1, 5, d.agents.riskRounds),
       minConfidence: clampNum(ag.minConfidence, 0, 1, d.agents.minConfidence),
       minRewardRisk: clampNum(ag.minRewardRisk, 0.5, 10, d.agents.minRewardRisk),
-      defaultLeverage: Math.min(maxLeverage, clampInt(ag.defaultLeverage, 1, 50, d.agents.defaultLeverage)),
+      defaultLeverage: Math.min(agentMaxLeverage, clampInt(ag.defaultLeverage, 1, 125, d.agents.defaultLeverage)),
       limitEntryTtlMinutes: clampInt(ag.limitEntryTtlMinutes, 5, 1440, d.agents.limitEntryTtlMinutes),
       newsFeeds: feeds,
       reflect: typeof ag.reflect === 'boolean' ? ag.reflect : d.agents.reflect
@@ -550,6 +569,12 @@ export interface OrderPlan {
   /** USDT lost if the stop fills at its price (fees included). */
   riskUsdt: number;
   rewardRisk: number;
+  /** Isolated liquidation price at this leverage (Binance tier MMR). */
+  liquidationPrice?: number;
+  /** Initial margin (USDT) = notional / leverage. */
+  margin?: number;
+  /** Maintenance margin rate of the tier this notional falls in. */
+  maintMarginRate?: number;
 }
 
 export interface RiskVerdict {
@@ -587,6 +612,10 @@ export interface PositionView {
   takeProfit: number | null;
   openedAt: number;
   source: TradingMode | 'manual';
+  /** Isolated liquidation price (exchange value on demo/live, computed on paper). */
+  liquidationPrice?: number | null;
+  /** Margin held by the position (USDT). */
+  margin?: number | null;
 }
 
 export interface AccountView {
@@ -823,6 +852,52 @@ export interface BiasView {
   updatedAt: number;
 }
 
+/**
+ * The scalper's trade card at its leverage (75x by default): what it would
+ * place right now for the leading side — or is about to place (`ready`).
+ */
+export interface ScalpPlanView {
+  side: Side;
+  /** True when the scalper's entry rules pass right now. */
+  ready: boolean;
+  score: number;
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit: number;
+  /** Distances from entry, % of price. */
+  stopPct: number;
+  targetPct: number;
+  /** Target distance / stop distance. */
+  rewardRisk: number;
+  /** Net reward / net risk after round-trip taker fees and slippage. */
+  rewardRiskNet: number;
+  requestedLeverage: number;
+  /** After the exchange tier cap and the liquidation-distance guard. */
+  leverage: number;
+  liquidationPrice: number;
+  /** Distance from entry to liquidation, % of price. */
+  liquidationPct: number;
+  maintMarginRate: number;
+  quantity: number;
+  notional: number;
+  margin: number;
+  /** USDT lost at the stop (fees + slippage included). */
+  riskUsdt: number;
+  /** USDT made at the target, after fees. */
+  rewardUsdt: number;
+  /** Return on margin at the stop / at the target, %. */
+  roeAtStop: number;
+  roeAtTarget: number;
+  /** Round-trip taker fees (entry + target), USDT. */
+  feesUsdt: number;
+  /** Price move needed just to cover round-trip fees and slippage, %. */
+  breakEvenPct: number;
+  /** Paper/replay tiers are estimates; demo/live come from Binance. */
+  bracketsEstimated: boolean;
+  /** Why the plan would not be placed as-is (risk engine), or adjustments it made (Korean). */
+  notes: string[];
+}
+
 export interface ScalpView {
   symbol: TradingSymbol;
   longScore: number;
@@ -835,6 +910,8 @@ export interface ScalpView {
   /** Why an entry was NOT taken right now, if any (Korean). */
   blocked?: string;
   evaluatedAt: number;
+  /** Trade card at the scalping leverage. */
+  plan?: ScalpPlanView;
 }
 
 export interface TradeView {

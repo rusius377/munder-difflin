@@ -1698,7 +1698,7 @@
         "compatKey": "서버 API 키 (선택)",
         "paperBalanceUsdt": "모의투자 시작 잔고",
         "riskPerTradePct": "거래당 최대 손실",
-        "maxLeverage": "최대 레버리지",
+        "maxLeverage": "최대 레버리지 (전체 상한)",
         "maxNotionalPct": "최대 포지션 규모 (자본 대비)",
         "dailyLossLimitPct": "일일 손실 한도",
         "maxConsecutiveLosses": "최대 연속 손실",
@@ -1748,7 +1748,8 @@
         "portfolioCommittee": "포트폴리오 위원회 인원",
         "biasPanel": "방향 필터 패널 인원 (스캘핑)",
         "maxParallel": "동시 실행 에이전트 수",
-        "consensus": "합의 규칙"
+        "consensus": "합의 규칙",
+        "agentMaxLeverage": "에이전트 모드 최대 레버리지"
       },
       "automationIntro": "바이낸스 API로 주문이 나갈 때 앱이 스스로 하는 일입니다. 데스크는 Munder Difflin이 켜져 있는 동안에만 거래합니다.",
       "autoStartLive": "실거래 환경에서 자동 시작이 켜져 있습니다: 앱을 켤 때마다 실제 자금으로 거래를 다시 시작합니다.",
@@ -1901,6 +1902,28 @@
       },
       "speeches": "발언 {{count}}회",
       "unscored": "채점 대상 아님 (방향 판단 없음)"
+    },
+    "plan": {
+      "title": "{{lev}}배 트레이드 카드",
+      "ready": "진입 신호",
+      "waiting": "대기",
+      "entry": "진입가",
+      "stop": "손절가",
+      "target": "목표가",
+      "rr": "손익비",
+      "rrNet": "수수료 후 {{v}}",
+      "leverage": "레버리지",
+      "liq": "청산가",
+      "qty": "수량",
+      "notional": "명목가",
+      "margin": "증거금",
+      "atStop": "손절 시",
+      "atTarget": "목표 도달 시",
+      "fees": "왕복 수수료",
+      "breakEven": "본전 이동폭",
+      "levAdjusted": "요청 {{req}}배 → {{lev}}배",
+      "feeWarning": "수수료 후 손익비가 1보다 낮습니다. 수수료가 이 거래의 기대수익 대부분을 먹습니다. 백테스트로 손절·목표 ATR 배수를 조정해 보세요.",
+      "estimated": "모의투자의 레버리지 구간은 추정값입니다. 데모·실거래는 계정에서 실제 구간을 읽습니다."
     }
   }
 }

@@ -4,7 +4,7 @@ import { PixelButton } from '../PixelButton';
 import {
   card, chip, fmtAge, fmtPct, fmtPx, fmtTime, fmtUsd, hint, metaRow, mono, pnlColor, sectionHead, useNow
 } from './tradingUi';
-import type { TradingConfig, TradingSnapshot, TradingSymbol, BiasDirection } from '@shared/trading';
+import type { TradingConfig, TradingSnapshot, TradingSymbol, BiasDirection, ScalpPlanView } from '@shared/trading';
 
 const BIAS_BG: Record<BiasDirection, string> = {
   LONG_ONLY: 'var(--cth-mint-light)',
@@ -22,6 +22,51 @@ function ScoreBar({ label, value, min, color }: { label: string; value: number; 
         <div style={{ position: 'absolute', left: `${min}%`, top: -2, bottom: -2, width: 1, background: 'var(--cth-ink-700)' }} />
       </div>
       <span style={{ ...mono, width: 24, textAlign: 'right' }}>{value}</span>
+    </div>
+  );
+}
+
+const signedPct = (v: number, dp = 3) => `${v >= 0 ? '+' : ''}${v.toFixed(dp)}%`;
+
+/** The scalper's trade card at its leverage (75x by default): entry, stop, target, R:R, liquidation, margin, ROE. */
+function PlanCard({ plan, symbol }: { plan: ScalpPlanView; symbol: TradingSymbol }) {
+  const { t } = useTranslation();
+  const dir = plan.side === 'LONG' ? 1 : -1;
+  const base = symbol.replace('USDT', '');
+  const cell = (label: string, value: string, sub?: string, color?: string) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+      <span style={hint}>{label}</span>
+      <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, color: color ?? 'var(--cth-ink-900)' }}>{value}</span>
+      {sub && <span style={{ ...mono, fontSize: 10 }}>{sub}</span>}
+    </div>
+  );
+  const netWeak = plan.rewardRiskNet < 1;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '6px 8px', border: '1px dashed var(--cth-ink-300)', background: 'var(--cth-cream-50)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ ...hint, fontWeight: 700, color: 'var(--cth-ink-900)' }}>{t('trading.plan.title', { lev: plan.requestedLeverage })}</span>
+        <span style={chip(plan.ready ? 'var(--cth-status-success)' : 'var(--cth-cream-300)', plan.ready ? 'var(--cth-cream-50)' : 'var(--cth-ink-900)')}>
+          {plan.ready ? t('trading.plan.ready') : t('trading.plan.waiting')}
+        </span>
+        <span style={chip(plan.side === 'LONG' ? 'var(--cth-mint-light)' : 'var(--cth-coral-light)', 'var(--cth-ink-900)')}>{t(`trading.side.${plan.side}`)} · {plan.score}</span>
+        {plan.leverage !== plan.requestedLeverage && <span style={mono}>{t('trading.plan.levAdjusted', { req: plan.requestedLeverage, lev: plan.leverage })}</span>}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 6 }}>
+        {cell(t('trading.plan.entry'), fmtPx(plan.entryPrice))}
+        {cell(t('trading.plan.stop'), fmtPx(plan.stopLoss), signedPct(-dir * plan.stopPct), 'var(--cth-status-blocked)')}
+        {cell(t('trading.plan.target'), fmtPx(plan.takeProfit), signedPct(dir * plan.targetPct), 'var(--cth-status-success)')}
+        {cell(t('trading.plan.rr'), `${plan.rewardRisk.toFixed(2)} : 1`, t('trading.plan.rrNet', { v: plan.rewardRiskNet.toFixed(2) }), netWeak ? 'var(--cth-status-blocked)' : undefined)}
+        {cell(t('trading.plan.leverage'), `${plan.leverage}x`, `MMR ${(plan.maintMarginRate * 100).toFixed(2)}%`)}
+        {cell(t('trading.plan.liq'), fmtPx(plan.liquidationPrice), signedPct(-dir * plan.liquidationPct, 2))}
+        {cell(t('trading.plan.qty'), `${plan.quantity.toFixed(3)} ${base}`, `${t('trading.plan.notional')} ${fmtUsd(plan.notional)}`)}
+        {cell(t('trading.plan.margin'), `${fmtUsd(plan.margin)} USDT`)}
+        {cell(t('trading.plan.atStop'), `${fmtUsd(-plan.riskUsdt, true)} USDT`, `ROE ${signedPct(plan.roeAtStop, 1)}`, 'var(--cth-status-blocked)')}
+        {cell(t('trading.plan.atTarget'), `${fmtUsd(plan.rewardUsdt, true)} USDT`, `ROE ${signedPct(plan.roeAtTarget, 1)}`, pnlColor(plan.rewardUsdt))}
+        {cell(t('trading.plan.fees'), `${fmtUsd(plan.feesUsdt)} USDT`, `${t('trading.plan.breakEven')} ${plan.breakEvenPct.toFixed(3)}%`)}
+      </div>
+      {netWeak && <div style={{ ...hint, color: 'var(--cth-status-blocked)' }}>{t('trading.plan.feeWarning')}</div>}
+      {plan.notes.length > 0 && <div style={hint}>{plan.notes.join(' · ')}</div>}
+      {plan.bracketsEstimated && <div style={{ ...hint, fontSize: 10 }}>{t('trading.plan.estimated')}</div>}
     </div>
   );
 }
@@ -134,6 +179,8 @@ export function TradingOverview({ snap, cfg }: { snap: TradingSnapshot | null; c
                 <div style={metaRow}>
                   <span>{t('trading.overview.sl')} {fmtPx(pos.stopLoss)}</span>
                   <span>{t('trading.overview.tp')} {fmtPx(pos.takeProfit)}</span>
+                  {pos.liquidationPrice ? <span>{t('trading.plan.liq')} {fmtPx(pos.liquidationPrice)}</span> : null}
+                  {pos.margin ? <span style={{ color: pnlColor(pos.unrealizedPnl) }}>ROE {signedPct((pos.unrealizedPnl / pos.margin) * 100, 1)}</span> : null}
                   <span>{t('trading.overview.held')} {fmtAge(now - pos.openedAt)}</span>
                   <span>{t(`trading.source.${pos.source}`)}</span>
                 </div>
@@ -181,6 +228,7 @@ export function TradingOverview({ snap, cfg }: { snap: TradingSnapshot | null; c
                     </div>
                     {sc.reasons.length > 0 && <div style={hint}>{sc.reasons.join(' · ')}</div>}
                     {sc.blocked && <div style={{ ...hint, color: 'var(--cth-ink-700)' }}>{t('trading.overview.blocked')}: {sc.blocked}</div>}
+                    {sc.plan && !pos && <PlanCard plan={sc.plan} symbol={s} />}
                   </>
                 ) : (
                   <div style={hint}>{t('trading.overview.noSignal')}</div>

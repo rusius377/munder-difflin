@@ -15,7 +15,9 @@ import {
   atr, avgVolume, bollinger, ema, lastValue, percentileRank, rsi, sessionVwap, takerBuyShare, valueAt, type Kline
 } from './indicators';
 import { depthImbalance, spreadBps, type ScalpInputs } from './marketData';
-import type { BiasDirection, PositionView, ScalpingSettings, Side } from '../../shared/trading';
+import { sizeOrder, type RiskContext } from './risk';
+import { FALLBACK_BRACKETS, liquidationPrice } from './leverage';
+import type { BiasDirection, PositionView, ScalpPlanView, ScalpingSettings, Side } from '../../shared/trading';
 
 export interface ScalpEval {
   price: number;
@@ -187,4 +189,73 @@ export function manageScalp(pos: PositionView, ev: ScalpEval, p: ScalpingSetting
     }
   }
   return { action: 'hold' };
+}
+
+/**
+ * The scalper's trade card at its leverage: the trade it would place right
+ * now for the leading side (or is placing, when `ev.entry` is set), sized by
+ * the real risk engine — same stop, same tier and liquidation guards, same
+ * fees — so the card shows exactly what an entry would look like.
+ */
+export function scalpPlan(ev: ScalpEval, ctx: RiskContext, p: ScalpingSettings, bracketsEstimated: boolean): ScalpPlanView | undefined {
+  if (!(ev.price > 0) || !(ev.atr > 0)) return undefined;
+  const side: Side = ev.entry ? ev.entry.side : ev.longScore >= ev.shortScore ? 'LONG' : 'SHORT';
+  const dir = side === 'LONG' ? 1 : -1;
+  const entry = ev.price;
+  const stopLoss = ev.entry?.stopLoss ?? entry - dir * p.slAtr * ev.atr;
+  const takeProfit = ev.entry?.takeProfit ?? entry + dir * p.tpAtr * ev.atr;
+  const v = sizeOrder(
+    { side, entryType: 'MARKET', entryPrice: entry, stopLoss, takeProfit, leverage: p.leverage, riskPct: ctx.risk.riskPerTradePct },
+    { ...ctx, minRewardRisk: 0 }
+  );
+  const fee = ctx.risk.takerFeePct / 100;
+  const slip = ctx.risk.slippageBps / 10_000;
+  const stopDist = Math.abs(entry - stopLoss);
+  const targetDist = Math.abs(takeProfit - entry);
+  const perUnitRisk = stopDist + (entry + stopLoss) * (fee + slip);
+  const perUnitReward = targetDist - (entry + takeProfit) * (fee + slip);
+  const brackets = ctx.brackets && ctx.brackets.length ? ctx.brackets : FALLBACK_BRACKETS[ctx.symbol];
+  // A refused plan still shows its levels: size it as the risk budget would (no exchange filters).
+  const quantity = v.plan?.quantity ?? Math.min(
+    (ctx.equity * ctx.risk.riskPerTradePct) / 100 / perUnitRisk,
+    (ctx.equity * ctx.risk.maxNotionalPct) / 100 / entry
+  );
+  const leverage = v.plan?.leverage ?? Math.min(p.leverage, ctx.risk.maxLeverage);
+  const liq = liquidationPrice({ side, entryPrice: entry, quantity: Math.max(quantity, 1e-9), leverage, brackets });
+  const notional = quantity * entry;
+  const margin = notional / leverage;
+  const riskUsdt = quantity * perUnitRisk;
+  const rewardUsdt = quantity * perUnitReward;
+  const notes: string[] = [];
+  if (!ev.entry && ev.blocked) notes.push(ev.blocked);
+  if (!v.approved) notes.push(v.reason);
+  notes.push(...v.adjustments);
+  return {
+    side,
+    ready: !!ev.entry && v.approved,
+    score: ev.entry?.score ?? Math.max(ev.longScore, ev.shortScore),
+    entryPrice: entry,
+    stopLoss: v.plan?.stopLoss ?? stopLoss,
+    takeProfit: v.plan?.takeProfit ?? takeProfit,
+    stopPct: (stopDist / entry) * 100,
+    targetPct: (targetDist / entry) * 100,
+    rewardRisk: stopDist > 0 ? targetDist / stopDist : 0,
+    rewardRiskNet: perUnitRisk > 0 ? perUnitReward / perUnitRisk : 0,
+    requestedLeverage: p.leverage,
+    leverage,
+    liquidationPrice: v.plan?.liquidationPrice ?? liq.price,
+    liquidationPct: (Math.abs(entry - liq.price) / entry) * 100,
+    maintMarginRate: liq.mmr,
+    quantity,
+    notional,
+    margin,
+    riskUsdt,
+    rewardUsdt,
+    roeAtStop: margin > 0 ? (-riskUsdt / margin) * 100 : 0,
+    roeAtTarget: margin > 0 ? (rewardUsdt / margin) * 100 : 0,
+    feesUsdt: quantity * (entry + takeProfit) * fee,
+    breakEvenPct: 2 * (fee + slip) * 100,
+    bracketsEstimated,
+    notes
+  };
 }

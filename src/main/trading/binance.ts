@@ -408,6 +408,11 @@ export class BinanceFuturesClient {
     return r.dualSidePosition === true || r.dualSidePosition === 'true';
   }
 
+  /** GET /fapi/v1/leverageBracket (signed, weight 1): the symbol's notional tiers. */
+  leverageBrackets(symbol?: string): Promise<unknown> {
+    return this.signedRequest('GET', '/fapi/v1/leverageBracket', symbol ? { symbol } : {});
+  }
+
   setLeverage(symbol: string, leverage: number): Promise<unknown> {
     return this.signedRequest('POST', '/fapi/v1/leverage', { symbol, leverage: Math.round(leverage) });
   }

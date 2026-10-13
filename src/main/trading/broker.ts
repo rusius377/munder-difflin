@@ -14,6 +14,7 @@ import {
   BinanceFuturesClient, fmtParam, roundToStep, type SymbolFilters
 } from './binance';
 import { grossPnl } from './risk';
+import { FALLBACK_BRACKETS, liquidationPrice, parseLeverageBrackets, type LeverageBracket } from './leverage';
 import {
   TRADING_SYMBOLS, type ExecutionVenue, type OrderPlan, type PositionView, type Side, type TradeView,
   type TradingMode, type TradingSymbol
@@ -54,6 +55,8 @@ export interface Broker {
   open(plan: OrderPlan, source: PositionSource): Promise<PositionView>;
   close(symbol: TradingSymbol, reason: string): Promise<TradeView | null>;
   updateStops(symbol: TradingSymbol, stopLoss: number | null, takeProfit: number | null): Promise<void>;
+  /** The exchange's leverage tiers for the symbol; null = use the estimate. */
+  brackets(symbol: TradingSymbol): LeverageBracket[] | null;
 }
 
 let seq = 0;
@@ -133,6 +136,15 @@ export class PaperBroker implements Broker {
     return this.filterMap[symbol] ?? FALLBACK_FILTERS[symbol] ?? null;
   }
 
+  brackets(): LeverageBracket[] | null {
+    return null;
+  }
+
+  /** Isolated liquidation price of a paper position (estimated tiers). */
+  private liqPrice(p: PaperPosition): number {
+    return liquidationPrice({ side: p.side, entryPrice: p.entryPrice, quantity: p.quantity, leverage: p.leverage, margin: p.margin, brackets: FALLBACK_BRACKETS[p.symbol] }).price;
+  }
+
   private upnl(p: PaperPosition): number {
     return grossPnl(p.side, p.quantity, p.entryPrice, p.markPrice);
   }
@@ -156,7 +168,9 @@ export class PaperBroker implements Broker {
       stopLoss: p.stopLoss,
       takeProfit: p.takeProfit,
       openedAt: p.openedAt,
-      source: p.source
+      source: p.source,
+      liquidationPrice: this.liqPrice(p),
+      margin: p.margin
     }));
   }
 
@@ -248,10 +262,13 @@ export class PaperBroker implements Broker {
       const lo = Math.min(t.low, t.last);
       const slHit = p.stopLoss !== null && (p.side === 'LONG' ? lo <= p.stopLoss : hi >= p.stopLoss);
       const tpHit = p.takeProfit !== null && (p.side === 'LONG' ? hi >= p.takeProfit : lo <= p.takeProfit);
-      // Isolated liquidation (approx.): loss eats ~all of the margin.
-      const liqLoss = -grossPnl(p.side, p.quantity, p.entryPrice, p.side === 'LONG' ? lo : hi);
-      if (liqLoss >= p.margin * 0.95 && !slHit) {
-        closed.push(this.settle(p, p.side === 'LONG' ? p.entryPrice - p.margin / p.quantity : p.entryPrice + p.margin / p.quantity, '강제 청산(모의)', false));
+      // Isolated liquidation at the tier's maintenance margin. When the bar
+      // crossed both, whichever level sits closer to entry was reached first.
+      const liq = this.liqPrice(p);
+      const liqHit = p.side === 'LONG' ? lo <= liq : hi >= liq;
+      const liqFirst = liqHit && (!slHit || (p.side === 'LONG' ? liq >= (p.stopLoss as number) : liq <= (p.stopLoss as number)));
+      if (liqFirst) {
+        closed.push(this.settle(p, liq, '강제 청산(모의)', false));
         continue;
       }
       if (slHit) closed.push(this.settle(p, p.stopLoss as number, '손절'));
@@ -303,6 +320,7 @@ export function isClosingAlgo(o: Record<string, unknown>): boolean {
 
 export class BinanceBroker implements Broker {
   private filterMap: Record<string, SymbolFilters> = {};
+  private bracketMap: Partial<Record<string, LeverageBracket[]>> = {};
   private hedge = false;
   private meta: Partial<Record<TradingSymbol, LiveMeta>> = {};
 
@@ -337,10 +355,19 @@ export class BinanceBroker implements Broker {
         this.log(`${s} 마진 모드 설정 실패(포지션/주문이 남아 있으면 변경 불가): ${e instanceof Error ? e.message : e}`, 'warn');
       }
     }
+    try {
+      this.bracketMap = parseLeverageBrackets(await this.client.leverageBrackets());
+    } catch (e) {
+      this.log(`레버리지 구간을 읽지 못해 추정값을 씁니다: ${e instanceof Error ? e.message : e}`, 'warn');
+    }
   }
 
   filters(symbol: TradingSymbol): SymbolFilters | null {
     return this.filterMap[symbol] ?? FALLBACK_FILTERS[symbol] ?? null;
+  }
+
+  brackets(symbol: TradingSymbol): LeverageBracket[] | null {
+    return this.bracketMap[symbol] ?? null;
   }
 
   async account(): Promise<BrokerAccount> {
@@ -375,7 +402,9 @@ export class BinanceBroker implements Broker {
         stopLoss: tracked ? m.stopLoss : null,
         takeProfit: tracked ? m.takeProfit : null,
         openedAt: tracked ? m.openedAt : r.updateTime,
-        source: tracked ? m.source : 'manual'
+        source: tracked ? m.source : 'manual',
+        liquidationPrice: r.liquidationPrice > 0 ? r.liquidationPrice : null,
+        margin: tracked && m.leverage > 0 ? (Math.abs(r.positionAmt) * r.entryPrice) / m.leverage : null
       });
     }
     return out;

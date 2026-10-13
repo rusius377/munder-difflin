@@ -303,6 +303,7 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
           <Num label={f('riskRounds')} value={d.agents.riskRounds} onChange={(v) => setAgents({ riskRounds: v })} />
           <Num label={f('minConfidence')} value={d.agents.minConfidence} step={0.05} onChange={(v) => setAgents({ minConfidence: v })} />
           <Num label={f('minRewardRisk')} value={d.agents.minRewardRisk} step={0.1} suffix=": 1" onChange={(v) => setAgents({ minRewardRisk: v })} />
+          <Num label={f('agentMaxLeverage')} value={d.agents.maxLeverage} suffix="x" onChange={(v) => setAgents({ maxLeverage: v })} />
           <Num label={f('defaultLeverage')} value={d.agents.defaultLeverage} suffix="x" onChange={(v) => setAgents({ defaultLeverage: v })} />
           <Num label={f('limitEntryTtlMinutes')} value={d.agents.limitEntryTtlMinutes} step={15} suffix={t('trading.units.min')} onChange={(v) => setAgents({ limitEntryTtlMinutes: v })} />
           <label style={{ ...hint, display: 'flex', gap: 6, alignItems: 'center' }}>

@@ -1698,7 +1698,7 @@
         "compatKey": "服务器 API 密钥（可选）",
         "paperBalanceUsdt": "模拟初始余额",
         "riskPerTradePct": "单笔最大亏损",
-        "maxLeverage": "最大杠杆",
+        "maxLeverage": "最大杠杆（所有模式）",
         "maxNotionalPct": "最大仓位（占权益）",
         "dailyLossLimitPct": "每日亏损上限",
         "maxConsecutiveLosses": "最大连续亏损",
@@ -1748,7 +1748,8 @@
         "portfolioCommittee": "投资组合委员会人数",
         "biasPanel": "方向过滤小组（剥头皮）",
         "maxParallel": "同时运行的智能体",
-        "consensus": "共识规则"
+        "consensus": "共识规则",
+        "agentMaxLeverage": "智能体模式最大杠杆"
       },
       "automationIntro": "订单通过币安 API 下达时应用自动执行的事项。只有 Munder Difflin 打开时交易台才会交易。",
       "autoStartLive": "实盘环境已开启自动启动：每次打开应用都会用真实资金恢复交易。",
@@ -1901,6 +1902,28 @@
       },
       "speeches": "{{count}} 次发言",
       "unscored": "不评分（不做方向判断）"
+    },
+    "plan": {
+      "title": "{{lev}}倍交易卡",
+      "ready": "入场信号",
+      "waiting": "等待中",
+      "entry": "入场价",
+      "stop": "止损",
+      "target": "目标价",
+      "rr": "盈亏比",
+      "rrNet": "扣费后 {{v}}",
+      "leverage": "杠杆",
+      "liq": "强平价",
+      "qty": "数量",
+      "notional": "名义价值",
+      "margin": "保证金",
+      "atStop": "触及止损",
+      "atTarget": "触及目标",
+      "fees": "往返手续费",
+      "breakEven": "保本所需波动",
+      "levAdjusted": "请求 {{req}}倍 → {{lev}}倍",
+      "feeWarning": "扣除手续费后盈亏比低于 1——手续费吃掉了这笔交易的大部分优势。请用回测调整止损/目标的 ATR 倍数。",
+      "estimated": "模拟盘使用的杠杆分层为估算值；演示和实盘会从账户读取真实分层。"
     }
   }
 }

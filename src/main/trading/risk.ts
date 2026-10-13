@@ -10,6 +10,7 @@
 import { roundToStep, type SymbolFilters } from './binance';
 import type { FinalDecision, OrderPlan, RiskSettings, RiskVerdict, Side, TradingSymbol } from '../../shared/trading';
 import { fmtPrice } from './indicators';
+import { FALLBACK_BRACKETS, bracketFor, liquidationPrice, maxNotionalAt, maxSafeLeverage, type LeverageBracket } from './leverage';
 
 export interface RiskContext {
   symbol: TradingSymbol;
@@ -23,6 +24,8 @@ export interface RiskContext {
   defaultLeverage: number;
   /** Set when the day is halted (daily loss / losing streak): new entries refused. */
   haltedReason?: string | null;
+  /** Binance leverage tiers for the symbol (demo/live: from the exchange; else the estimate). */
+  brackets?: readonly LeverageBracket[] | null;
 }
 
 export interface SizeRequest {
@@ -40,7 +43,7 @@ const MIN_STOP_FRAC = 0.0008;
 /** Stop wider than this is not a futures trade the desk should size. */
 const MAX_STOP_FRAC = 0.15;
 /** Keep the (isolated) liquidation price this much further away than the stop, in units of the stop distance. */
-const LIQ_BUFFER = 1.25;
+export const LIQ_BUFFER = 1.25;
 
 export function sizeOrder(req: SizeRequest, ctx: RiskContext, adjustments: string[] = []): RiskVerdict {
   const { side } = req;
@@ -73,17 +76,14 @@ export function sizeOrder(req: SizeRequest, ctx: RiskContext, adjustments: strin
 
   // Leverage: clamp to the ceiling, then lower it until an isolated liquidation
   // sits safely beyond the stop (a stop past liquidation is no stop at all).
+  // The exchange tier is checked once the size is known (below).
+  const brackets = ctx.brackets && ctx.brackets.length ? ctx.brackets : FALLBACK_BRACKETS[ctx.symbol];
   let leverage = Math.round(req.leverage > 0 ? req.leverage : ctx.defaultLeverage);
   if (leverage > r.maxLeverage) {
     adjustments.push(`레버리지 ${leverage}배 → 상한 ${r.maxLeverage}배로 조정`);
     leverage = r.maxLeverage;
   }
   leverage = Math.max(1, leverage);
-  const liqSafeMax = Math.max(1, Math.floor(1 / (stopFrac * LIQ_BUFFER) * 0.9));
-  if (leverage > liqSafeMax) {
-    adjustments.push(`손절이 청산가보다 먼저 닿도록 레버리지 ${leverage}배 → ${liqSafeMax}배로 하향`);
-    leverage = liqSafeMax;
-  }
 
   let riskPct = req.riskPct > 0 ? req.riskPct : r.riskPerTradePct;
   if (riskPct > r.riskPerTradePct) {
@@ -102,6 +102,25 @@ export function sizeOrder(req: SizeRequest, ctx: RiskContext, adjustments: strin
   if (qty * entry > notionalCap) {
     qty = notionalCap / entry;
     adjustments.push(`포지션 규모를 자본의 ${r.maxNotionalPct}% 명목가 상한으로 축소`);
+  }
+
+  // Exchange tier: the size decides the tier, the tier caps the leverage and
+  // sets the maintenance margin rate. Then keep liquidation beyond the stop.
+  const tierMax = bracketFor(brackets, qty * entry).initialLeverage;
+  if (leverage > tierMax) {
+    adjustments.push(`명목가 ${(qty * entry).toFixed(0)} USDT 구간의 거래소 최대 레버리지 ${tierMax}배로 하향`);
+    leverage = tierMax;
+  }
+  const mmr = bracketFor(brackets, qty * entry).maintMarginRatio;
+  const liqSafeMax = maxSafeLeverage(stopFrac, mmr, LIQ_BUFFER);
+  if (leverage > liqSafeMax) {
+    adjustments.push(`손절이 청산가보다 먼저 닿도록 레버리지 ${leverage}배 → ${liqSafeMax}배로 하향`);
+    leverage = liqSafeMax;
+  }
+  const tierNotional = maxNotionalAt(brackets, leverage);
+  if (tierNotional > 0 && qty * entry > tierNotional) {
+    qty = tierNotional / entry;
+    adjustments.push(`${leverage}배에서 거래소가 허용하는 명목가 ${tierNotional.toLocaleString('en-US')} USDT로 축소`);
   }
   const marginCap = Math.max(0, ctx.available) * leverage * 0.95;
   if (qty * entry > marginCap) {
@@ -123,6 +142,7 @@ export function sizeOrder(req: SizeRequest, ctx: RiskContext, adjustments: strin
   }
 
   const tick = f?.tickSize ?? 0.1;
+  const liq = liquidationPrice({ side, entryPrice: entry, quantity: qty, leverage, brackets });
   const plan: OrderPlan = {
     symbol: ctx.symbol,
     side,
@@ -134,11 +154,14 @@ export function sizeOrder(req: SizeRequest, ctx: RiskContext, adjustments: strin
     quantity: qty,
     notional,
     riskUsdt: qty * perUnitLoss,
-    rewardRisk
+    rewardRisk,
+    liquidationPrice: roundToStep(liq.price, tick),
+    margin: liq.margin,
+    maintMarginRate: liq.mmr
   };
   return {
     approved: true,
-    reason: `${side === 'LONG' ? '롱' : '숏'} ${qty} @ ${fmtPrice(plan.entryPrice)} · 손절 ${fmtPrice(plan.stopLoss)} · 익절 ${fmtPrice(plan.takeProfit)} · ${leverage}배 · 최대손실 ${plan.riskUsdt.toFixed(2)} USDT · 손익비 ${rewardRisk.toFixed(2)}`,
+    reason: `${side === 'LONG' ? '롱' : '숏'} ${qty} @ ${fmtPrice(plan.entryPrice)} · 손절 ${fmtPrice(plan.stopLoss)} · 익절 ${fmtPrice(plan.takeProfit)} · ${leverage}배 · 청산가 ${fmtPrice(plan.liquidationPrice)} · 최대손실 ${plan.riskUsdt.toFixed(2)} USDT · 손익비 ${rewardRisk.toFixed(2)}`,
     plan,
     adjustments
   };

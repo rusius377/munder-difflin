@@ -185,9 +185,9 @@ test('risk engine rejects wrong-side stops, thin R:R, and clamps leverage and ri
   const thin = risk.sizeOrder({ side: 'LONG', entryType: 'MARKET', entryPrice: 64000, stopLoss: 63000, takeProfit: 64500, leverage: 5, riskPct: 1 }, ctx());
   assert.equal(thin.approved, false);
   assert.match(thin.reason, /손익비/);
-  const v = risk.sizeOrder({ side: 'LONG', entryType: 'MARKET', entryPrice: 64000, stopLoss: 63000, takeProfit: 67000, leverage: 75, riskPct: 4 }, ctx());
+  const v = risk.sizeOrder({ side: 'LONG', entryType: 'MARKET', entryPrice: 64000, stopLoss: 63000, takeProfit: 67000, leverage: 150, riskPct: 4 }, ctx({ risk: { ...RISK, maxLeverage: 10 } }));
   assert.equal(v.approved, true);
-  assert.equal(v.plan.leverage, RISK.maxLeverage);
+  assert.equal(v.plan.leverage, 10);
   assert.ok(v.adjustments.some((a) => /레버리지/.test(a)));
   assert.ok(v.adjustments.some((a) => /리스크/.test(a)));
 });
@@ -338,7 +338,7 @@ test('manageScalp: time stop, break-even move, strong opposite signal', () => {
 test('normalizeTradingConfig clamps numbers and refuses live without acknowledgement', () => {
   const c = shared.normalizeTradingConfig({ venue: 'live', risk: { maxLeverage: 500, riskPerTradePct: 50 }, symbols: ['BTCUSDT', 'DOGEUSDT'], llm: { quickModel: 'rm -rf /' } });
   assert.equal(c.venue, 'paper');
-  assert.equal(c.risk.maxLeverage, 50);
+  assert.equal(c.risk.maxLeverage, 125, 'Binance first-tier maximum');
   assert.equal(c.risk.riskPerTradePct, 5);
   assert.deepEqual(c.symbols, ['BTCUSDT']);
   assert.equal(c.llm.quickModel, 'sonnet');

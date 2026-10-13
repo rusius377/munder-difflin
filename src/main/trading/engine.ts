@@ -25,7 +25,7 @@ import { biasDeskPrompt, reflectionPrompt, type DeskConstraints } from './prompt
 import { parseBias } from './decision';
 import { aggregateBias, biasPanelClosing, committeeMinutes, memberRule, personaKey, withMember } from './teams';
 import { planFromDecision, sizeOrder, type RiskContext } from './risk';
-import { evaluateScalp, manageScalp, biasKo } from './scalper';
+import { evaluateScalp, manageScalp, biasKo, scalpPlan } from './scalper';
 import { Journal, type DayState } from './journal';
 import { fmtPrice } from './indicators';
 import { limitConcurrency, type LlmCall, type LlmClient } from './llm';
@@ -557,7 +557,8 @@ export class TradingEngine {
     }
   }
 
-  private riskContext(symbol: TradingSymbol, price: number, minRewardRisk: number, defaultLeverage: number): RiskContext {
+  /** `maxLeverage`: the mode's ceiling (agents: agents.maxLeverage; scalping: the global one). */
+  private riskContext(symbol: TradingSymbol, price: number, minRewardRisk: number, defaultLeverage: number, maxLeverage = this.cfg.risk.maxLeverage): RiskContext {
     const a = this.snap.account;
     return {
       symbol,
@@ -565,10 +566,11 @@ export class TradingEngine {
       equity: a?.equity ?? this.cfg.risk.paperBalanceUsdt,
       available: a?.available ?? this.cfg.risk.paperBalanceUsdt,
       filters: this.broker?.filters(symbol) ?? null,
-      risk: this.cfg.risk,
+      risk: { ...this.cfg.risk, maxLeverage: Math.min(this.cfg.risk.maxLeverage, maxLeverage) },
       minRewardRisk,
       defaultLeverage,
-      haltedReason: this.haltedReason()
+      haltedReason: this.haltedReason(),
+      brackets: this.broker?.brackets(symbol) ?? null
     };
   }
 
@@ -608,7 +610,7 @@ export class TradingEngine {
         side, entryType: 'MARKET', entryPrice: t.last, stopLoss: p.decision.stopLoss ?? 0,
         takeProfit: p.decision.takeProfit ?? 0, leverage: p.decision.leverage ?? this.cfg.agents.defaultLeverage,
         riskPct: p.decision.riskPct ?? this.cfg.risk.riskPerTradePct
-      }, this.riskContext(p.symbol, t.last, this.cfg.agents.minRewardRisk, this.cfg.agents.defaultLeverage));
+      }, this.riskContext(p.symbol, t.last, this.cfg.agents.minRewardRisk, this.cfg.agents.defaultLeverage, this.cfg.agents.maxLeverage));
       if (verdict.approved && verdict.plan) {
         this.log(`${p.symbol} 지정가 ${fmtPrice(p.limitPrice)} 도달 — 진입`, 'info', p.symbol);
         const pos = await this.openPlan(verdict.plan, 'agents');
@@ -678,7 +680,7 @@ export class TradingEngine {
 
   private constraints(): DeskConstraints {
     return {
-      maxLeverage: this.cfg.risk.maxLeverage,
+      maxLeverage: Math.min(this.cfg.risk.maxLeverage, this.cfg.agents.maxLeverage),
       riskPerTradePct: this.cfg.risk.riskPerTradePct,
       minRewardRisk: this.cfg.agents.minRewardRisk,
       minConfidence: this.cfg.agents.minConfidence,
@@ -817,7 +819,7 @@ export class TradingEngine {
       return noExec({ approved: false, reason: '같은 방향 포지션 보유 중 — 유지', adjustments: [] });
     }
 
-    const verdict = planFromDecision(d, this.riskContext(symbol, price, this.cfg.agents.minRewardRisk, this.cfg.agents.defaultLeverage), this.cfg.agents.minConfidence);
+    const verdict = planFromDecision(d, this.riskContext(symbol, price, this.cfg.agents.minRewardRisk, this.cfg.agents.defaultLeverage, this.cfg.agents.maxLeverage), this.cfg.agents.minConfidence);
     if (pos && pos.side !== d.action) {
       // Reversal: flatten first (even if the new entry is then refused — the
       // portfolio manager's call is that the old side is wrong).
@@ -890,7 +892,8 @@ export class TradingEngine {
     const ev = evaluateScalp(inputs, p, bias);
     this.snap.scalp[symbol] = {
       symbol, longScore: ev.longScore, shortScore: ev.shortScore, trend: ev.trend, atrPct: ev.atrPct,
-      spreadBps: ev.spreadBps, reasons: ev.reasons, blocked: ev.blocked, evaluatedAt: this.now()
+      spreadBps: ev.spreadBps, reasons: ev.reasons, blocked: ev.blocked, evaluatedAt: this.now(),
+      plan: scalpPlan(ev, this.riskContext(symbol, ev.price, 0, p.leverage), p, !this.broker?.brackets(symbol))
     };
     if (!this.broker) return;
 

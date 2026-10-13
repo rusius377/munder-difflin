@@ -1698,7 +1698,7 @@
         "compatKey": "server API key (optional)",
         "paperBalanceUsdt": "paper starting balance",
         "riskPerTradePct": "max loss per trade",
-        "maxLeverage": "max leverage",
+        "maxLeverage": "max leverage (all modes)",
         "maxNotionalPct": "max position size (of equity)",
         "dailyLossLimitPct": "daily loss limit",
         "maxConsecutiveLosses": "max losing streak",
@@ -1748,7 +1748,8 @@
         "portfolioCommittee": "portfolio committee",
         "biasPanel": "bias panel (scalping)",
         "maxParallel": "agents running at once",
-        "consensus": "consensus rule"
+        "consensus": "consensus rule",
+        "agentMaxLeverage": "agent-mode max leverage"
       },
       "automationIntro": "What the app does on its own once orders run through the Binance API. The desk only trades while Munder Difflin is open.",
       "autoStartLive": "Auto-start is on for the LIVE venue: every app launch resumes trading real money.",
@@ -1901,6 +1902,28 @@
       },
       "speeches": "{{count}} turns",
       "unscored": "not scored (makes no calls)"
+    },
+    "plan": {
+      "title": "{{lev}}x trade card",
+      "ready": "entry signal",
+      "waiting": "waiting",
+      "entry": "entry",
+      "stop": "stop",
+      "target": "target",
+      "rr": "reward : risk",
+      "rrNet": "after fees {{v}}",
+      "leverage": "leverage",
+      "liq": "liquidation",
+      "qty": "size",
+      "notional": "notional",
+      "margin": "margin",
+      "atStop": "at the stop",
+      "atTarget": "at the target",
+      "fees": "round-trip fees",
+      "breakEven": "break-even move",
+      "levAdjusted": "asked {{req}}x → {{lev}}x",
+      "feeWarning": "Reward:risk after fees is below 1 — fees take most of this trade's edge. Use a backtest to tune the stop/target ATR multiples.",
+      "estimated": "Leverage tiers are Binance-shaped estimates on paper; demo and live read the real table from your account."
     }
   }
 }
