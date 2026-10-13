@@ -1416,7 +1416,8 @@
       "agents": "智能体",
       "trades": "成交记录",
       "log": "日志",
-      "settings": "设置"
+      "settings": "设置",
+      "team": "智能体文件夹"
     },
     "status": {
       "stopped": "已停止",
@@ -1615,7 +1616,9 @@
       "consensusMissed": "未达成共识",
       "sizeScale": "仓位 {{pct}}%",
       "noVote": "未回复",
-      "seats": "{{count}} 人"
+      "seats": "{{count}} 人",
+      "openFolder": "打开文件夹",
+      "openFolderHint": "该智能体的项目文件夹：CLAUDE.md 指令、成绩单、教训和输出"
     },
     "trades": {
       "none": "还没有已平仓的交易。",
@@ -1864,6 +1867,40 @@
         "sentiment": "情绪评判员",
         "structure": "结构评判员"
       }
+    },
+    "roster": {
+      "title": "每个智能体一个项目文件夹",
+      "intro": "每个智能体都有自己的文件夹并在其中工作。在其 CLAUDE.md 的“## 내 지침”下写的内容从下一次调用起生效；适用于所有智能体的指令写在顶层文件夹的 CLAUDE.md 中。每个文件夹还保存该智能体的成绩单、它投票过的交易和最近的报告，每个智能体在回答前都会看到自己的记录。",
+      "scoring": "评分：看多/做多判断在价格上涨时命中，看空/做空判断在价格下跌时命中——智能体算法看 4 小时后，剥头皮方向小组看 1 小时后。中性和观望不评分。“平均变动”是判断方向上的平均价格变化。",
+      "openRoot": "打开全部文件夹",
+      "register": "添加为办公室项目",
+      "registerHint": "将智能体文件夹注册为办公室项目，之后可以雇用办公室智能体进入该项目来阅读或编辑交易台的智能体。",
+      "registered": "已注册为办公室项目",
+      "registerDone": "已注册。在办公室雇用智能体时，可以选择此文件夹作为其项目。",
+      "loading": "加载中…",
+      "cols": {
+        "agent": "智能体",
+        "opinions": "判断",
+        "hitRate": "命中率",
+        "edge": "平均变动",
+        "pending": "待评分",
+        "last": "最近判断",
+        "instructions": "指令",
+        "folder": "文件夹"
+      },
+      "open": "打开",
+      "customized": "已修改",
+      "default": "默认",
+      "none": "—",
+      "noScore": "尚未评分",
+      "showFormer": "显示 {{count}} 个以前的席位",
+      "hideFormer": "隐藏以前的席位",
+      "formerNote": "当前团队设置不再使用的席位。它们的文件夹和记录会保留；重新扩大团队后会接着使用。",
+      "groups": {
+        "other": "其他"
+      },
+      "speeches": "{{count}} 次发言",
+      "unscored": "不评分（不做方向判断）"
     }
   }
 }

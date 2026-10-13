@@ -22,12 +22,31 @@ import type { LlmSettings, TradingSecretKey } from '../../shared/trading';
 export type LlmTier = 'quick' | 'deep';
 
 export interface LlmCall {
-  /** Role key — also names the hidden session's working folder. */
+  /** Role key — also names the hidden session's working folder when there is no `workdir`. */
   role: string;
   tier: LlmTier;
   system: string;
   prompt: string;
   maxTokens?: number;
+  /**
+   * The agent's project folder. The Claude-subscription session then runs in
+   * `<workdir>/.sessions/<sessionKey>`, so Claude Code loads the agent's
+   * CLAUDE.md (and the desk-wide one above it) as project memory by itself.
+   */
+  workdir?: string;
+  /** Separates concurrent sessions of the same agent (one per symbol). */
+  sessionKey?: string;
+  /**
+   * The user-written instructions from those CLAUDE.md files, for providers
+   * that do not read files (API / OpenAI-compatible). Ignored by the Claude
+   * subscription when `workdir` is set — Claude Code already read them.
+   */
+  instructions?: string;
+}
+
+/** System prompt plus the user's CLAUDE.md instructions, for file-less providers. */
+export function systemWithInstructions(call: LlmCall): string {
+  return call.instructions?.trim() ? `${call.system}\n\n${call.instructions.trim()}` : call.system;
 }
 
 export interface LlmClient {
@@ -66,7 +85,9 @@ const NO_TOOLS_KO =
   '아래에 주어진 자료만 근거로 지금 바로 최종 답변을 작성하라. 질문을 되묻지 말고, 주어지지 않은 수치를 지어내지 마라.';
 
 export function composeHiddenPrompt(call: LlmCall): string {
-  return `[시스템 지시]\n${NO_TOOLS_KO}\n\n${call.system.trim()}\n\n[작업]\n${call.prompt.trim()}`;
+  // In an agent folder Claude Code has already loaded the CLAUDE.md instructions.
+  const system = call.workdir ? call.system : systemWithInstructions(call);
+  return `[시스템 지시]\n${NO_TOOLS_KO}\n\n${system.trim()}\n\n[작업]\n${call.prompt.trim()}`;
 }
 
 function safeDirName(s: string): string {
@@ -96,9 +117,13 @@ class ClaudeSubscriptionClient implements LlmClient {
   async complete(call: LlmCall): Promise<string> {
     const run = this.deps.runHidden;
     if (!run) throw new Error('Claude 숨은 세션을 사용할 수 없습니다');
-    // One folder per role: concurrent sessions must not share a transcript dir,
-    // because the hidden runner reads the newest transcript in its cwd.
-    const cwd = path.join(this.deps.sessionRoot, safeDirName(call.role));
+    // One folder per role (or per agent and symbol): concurrent sessions must
+    // not share a transcript dir, because the hidden runner reads the newest
+    // transcript in its cwd. An agent's folder sits above its session folder,
+    // so Claude Code picks up that agent's CLAUDE.md on its own.
+    const cwd = call.workdir
+      ? path.join(call.workdir, '.sessions', safeDirName(call.sessionKey ?? call.role))
+      : path.join(this.deps.sessionRoot, safeDirName(call.role));
     mkdirSync(cwd, { recursive: true });
     try { this.deps.prepareCwd?.(cwd); } catch { /* never block */ }
     const model = call.tier === 'deep' ? this.s.deepModel : this.s.quickModel;
@@ -158,7 +183,7 @@ class AnthropicClient implements LlmClient {
     }, {
       model: call.tier === 'deep' ? this.s.deepModel : this.s.quickModel,
       max_tokens: call.maxTokens ?? (call.tier === 'deep' ? 6000 : 4000),
-      system: call.system,
+      system: systemWithInstructions(call),
       messages: [{ role: 'user', content: call.prompt }]
     }, this.s.timeoutSec * 1000) as { content?: Array<{ type: string; text?: string }> };
     const text = (j.content ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n').trim();
@@ -185,7 +210,7 @@ class OpenAiChatClient implements LlmClient {
     const j = await postJson(this.deps.fetch, this.url, key ? { authorization: `Bearer ${key}` } : {}, {
       model: call.tier === 'deep' ? this.s.deepModel : this.s.quickModel,
       messages: [
-        { role: 'system', content: call.system },
+        { role: 'system', content: systemWithInstructions(call) },
         { role: 'user', content: call.prompt }
       ],
       max_completion_tokens: call.maxTokens ?? (call.tier === 'deep' ? 6000 : 4000)

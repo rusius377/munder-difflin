@@ -1416,7 +1416,8 @@
       "agents": "agents",
       "trades": "trades",
       "log": "log",
-      "settings": "settings"
+      "settings": "settings",
+      "team": "agent folders"
     },
     "status": {
       "stopped": "stopped",
@@ -1615,7 +1616,9 @@
       "consensusMissed": "no consensus",
       "sizeScale": "size {{pct}}%",
       "noVote": "no answer",
-      "seats": "{{count}} seats"
+      "seats": "{{count}} seats",
+      "openFolder": "open folder",
+      "openFolderHint": "This agent's project folder: its CLAUDE.md instructions, scorecard, lessons and outputs"
     },
     "trades": {
       "none": "No closed trades yet.",
@@ -1864,6 +1867,40 @@
         "sentiment": "Sentiment judge",
         "structure": "Structure judge"
       }
+    },
+    "roster": {
+      "title": "One project folder per agent",
+      "intro": "Every agent has its own folder and works in it. Whatever you write under \"## 내 지침\" in its CLAUDE.md applies from its next call; instructions for every agent go in the CLAUDE.md of the top folder. Each folder also keeps the agent's scorecard, the trades it voted on and its latest reports, and every agent is reminded of its own record before it answers.",
+      "scoring": "Scoring: a bullish / long call hits if the price is higher, a bearish / short call if it is lower — 4 hours later for the agent algorithm, 1 hour later for the scalping bias panel. Neutral and hold calls are not scored. \"Average move\" is the mean price change in the called direction.",
+      "openRoot": "open all folders",
+      "register": "add to the office as a project",
+      "registerHint": "Registers the agents folder as an office project, so you can hire an office agent into it to read or edit the desk's agents.",
+      "registered": "registered as an office project",
+      "registerDone": "Registered. When you hire an agent in the office, you can pick this folder as its project.",
+      "loading": "loading…",
+      "cols": {
+        "agent": "agent",
+        "opinions": "calls",
+        "hitRate": "hit rate",
+        "edge": "average move",
+        "pending": "awaiting score",
+        "last": "latest call",
+        "instructions": "instructions",
+        "folder": "folder"
+      },
+      "open": "open",
+      "customized": "edited",
+      "default": "default",
+      "none": "—",
+      "noScore": "not scored yet",
+      "showFormer": "show {{count}} former seats",
+      "hideFormer": "hide former seats",
+      "formerNote": "Seats the current team settings no longer use. Their folders and records stay; grow the team again and they continue where they left off.",
+      "groups": {
+        "other": "other"
+      },
+      "speeches": "{{count}} turns",
+      "unscored": "not scored (makes no calls)"
     }
   }
 }

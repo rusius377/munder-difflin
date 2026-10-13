@@ -9,6 +9,9 @@
  *                                      write-only: only presence booleans come back.
  *   trading:start / stop / runNow / closePosition / resetPaper / snapshot / test
  *   trading:openReports                opens the reports folder
+ *   trading:agents                     every agent's project folder + track record
+ *   trading:openAgentFolder            opens one agent's folder (or the agents root)
+ *   trading:registerAgentsProject      adds the agents root to the office's projects
  *   'trading:update' (event)           throttled TradingSnapshot push
  *
  * Automation (config.automation): auto-start on launch, a power-save blocker
@@ -18,11 +21,12 @@ import { app, ipcMain, Notification, powerSaveBlocker, shell } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { runHiddenClaude } from '../hiddenClaude';
-import { ensureClaudePermissionsAccepted, readConfig } from '../config';
+import { ensureClaudePermissionsAccepted, readConfig, writeConfig } from '../config';
 import { projectDir } from '../transcript';
 import { deleteSecret, getSecret, hasSecret, setSecret } from '../integrations';
 import { TradingEngine } from './engine';
 import { createLlmClient } from './llm';
+import { parseAgentId } from './agentProjects';
 import { BinanceFuturesClient, BINANCE_REST, liveKeyPermissions, type FetchLike } from './binance';
 import {
   assessLiveKey, normalizeTradingConfig, TRADING_SECRET_KEYS, TRADING_SYMBOLS, type EngineStatus,
@@ -179,6 +183,41 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
   /** Whether the OS launches the app at login (the onboarding sets it; the desk's automation section shows it again). */
   ipcMain.handle('trading:getLoginItem', () => {
     try { return app.getLoginItemSettings().openAtLogin; } catch { return false; }
+  });
+
+  ipcMain.handle('trading:agents', () => {
+    try {
+      return { ok: true, root: engine.projects.root, agents: engine.listAgents(), registered: (readConfig().registeredRepos ?? []).includes(engine.projects.root) };
+    } catch (e) {
+      return { ok: false, error: errMsg(e), root: engine.projects.root, agents: [], registered: false };
+    }
+  });
+
+  ipcMain.handle('trading:openAgentFolder', async (_e: unknown, payload: unknown) => {
+    const id = (payload as { id?: unknown } | null)?.id;
+    let dir = engine.projects.root;
+    if (id !== undefined) {
+      // Only a known agent id resolves to a folder: no path ever comes from the renderer.
+      const ref = typeof id === 'string' ? parseAgentId(id) : null;
+      if (!ref) return { ok: false, error: '잘못된 에이전트' };
+      dir = engine.projects.ensure(ref);
+    }
+    const err = await shell.openPath(dir);
+    return err ? { ok: false, error: err } : { ok: true };
+  });
+
+  /** The agents root becomes an office project (a room), so an office agent can be pointed at the desk's agents. */
+  ipcMain.handle('trading:registerAgentsProject', () => {
+    try {
+      const root = engine.projects.root;
+      const repos = readConfig().registeredRepos ?? [];
+      if (repos.includes(root)) return { ok: true, path: root, already: true };
+      writeConfig({ registeredRepos: [...repos, root] });
+      engine.log(`에이전트 폴더를 사무실 프로젝트로 등록했습니다: ${root}`);
+      return { ok: true, path: root, already: false };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
   });
 
   ipcMain.handle('trading:openReports', async () => {

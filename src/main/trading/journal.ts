@@ -7,6 +7,7 @@
  *   day-<venue>.json         today's risk counters, so a restart cannot reset
  *                            the daily loss limit
  *   paper.json / meta-<venue>.json   broker state
+ *   agents/<agent>/          one project folder per agent (agentProjects.ts)
  *
  * Everything is best-effort: a failed write is logged by the caller and never
  * stops trading logic.

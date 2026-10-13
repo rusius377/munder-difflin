@@ -15,10 +15,12 @@
  * The engine is constructed with injected I/O (fetch, LLM, clock, data dir),
  * so it runs in tests without Electron.
  */
+import path from 'node:path';
 import { BinanceFuturesClient, BINANCE_REST, liveKeyPermissions, type FetchLike } from './binance';
 import { BinanceBroker, PaperBroker, type Broker, type PriceTick } from './broker';
 import { MarketData, formatTechnicalBlock, summarizeTimeframe } from './marketData';
-import { runPipeline, renderReport, PipelineAborted } from './agents';
+import { runPipeline, renderReport, PipelineAborted, type AgentHooks } from './agents';
+import { AgentProjects, OPINION_HORIZON_MS, opinionSummary, voteKo } from './agentProjects';
 import { biasDeskPrompt, reflectionPrompt, type DeskConstraints } from './prompts';
 import { parseBias } from './decision';
 import { aggregateBias, biasPanelClosing, committeeMinutes, memberRule, personaKey, withMember } from './teams';
@@ -26,10 +28,11 @@ import { planFromDecision, sizeOrder, type RiskContext } from './risk';
 import { evaluateScalp, manageScalp, biasKo } from './scalper';
 import { Journal, type DayState } from './journal';
 import { fmtPrice } from './indicators';
-import { limitConcurrency, type LlmClient } from './llm';
+import { limitConcurrency, type LlmCall, type LlmClient } from './llm';
 import {
-  assessLiveKey, biasSkeleton, dayKeyOf, emptySnapshot, normalizeTradingConfig, pipelineSkeleton, stepId, stepKey,
-  type AgentRunView, type AgentStepView, type BiasDirection, type ExecutionVenue, type FinalDecision, type OrderPlan,
+  agentRef, assessLiveKey, biasSkeleton, dayKeyOf, emptySnapshot, normalizeTradingConfig, pipelineSkeleton, stepId, stepKey,
+  teamAgents, voteDirection,
+  type AgentProjectView, type AgentRef, type AgentRunView, type AgentStepView, type BiasDirection, type ExecutionVenue, type FinalDecision, type OrderPlan,
   type PositionView, type RiskVerdict, type TradeView, type TradingConfig, type TradingSecretKey,
   type TradingSnapshot, type TradingSymbol, type LogLine
 } from '../../shared/trading';
@@ -53,12 +56,20 @@ const MAX_TRADES = 100;
 const FULL_TEXT_RUNS = 3;
 const EMIT_THROTTLE_MS = 400;
 
+/** An agent that made a directional call in the run that opened a position. */
+interface Voter {
+  agent: AgentRef;
+  vote: string;
+  confidence: number | null;
+}
+
 interface PendingEntry {
   symbol: TradingSymbol;
   decision: FinalDecision;
   limitPrice: number;
   expiresAt: number;
   runId: string;
+  voters: Voter[];
 }
 
 export class TradingEngine {
@@ -80,8 +91,13 @@ export class TradingEngine {
   private lastExitAt: Partial<Record<TradingSymbol, number>> = {};
   private entryTimes: Partial<Record<TradingSymbol, number[]>> = {};
   /** Decision that opened an agents-mode position, for reflection when it closes. */
-  private openDecision: Partial<Record<TradingSymbol, { runId: string; summary: string }>> = {};
+  private openDecision: Partial<Record<TradingSymbol, { runId: string; summary: string; voters: Voter[] }>> = {};
   private lastErrorNotice = 0;
+  /** One project folder per agent: instructions, track record, outputs (agentProjects.ts). */
+  readonly projects: AgentProjects;
+  private scoring = false;
+  private lastScoreAt = 0;
+  private projectWarned = false;
 
   constructor(cfg: TradingConfig, private readonly deps: EngineDeps) {
     this.cfg = normalizeTradingConfig(cfg);
@@ -89,6 +105,126 @@ export class TradingEngine {
     this.journal = new Journal(deps.dataDir);
     this.market = new MarketData(deps.fetch, { now: deps.now });
     this.snap.trades = this.journal.recentTrades(MAX_TRADES, this.cfg.venue).reverse();
+    this.projects = new AgentProjects(path.join(deps.dataDir, 'agents'), () => this.now());
+    this.ensureTeam();
+  }
+
+  // ─── agent projects ────────────────────────────────────────────────────
+
+  /** Give every agent of the current team its folder (and CLAUDE.md), so the user can see and edit them before a run. */
+  private ensureTeam(): void {
+    for (const a of teamAgents(this.cfg)) {
+      try { this.projects.ensure(a); } catch (e) { this.projectError(e); }
+    }
+  }
+
+  private projectError(e: unknown): void {
+    if (this.projectWarned) return;
+    this.projectWarned = true;
+    this.log(`에이전트 폴더 기록 실패 (거래에는 영향 없음): ${e instanceof Error ? e.message : e}`, 'warn');
+  }
+
+  /** The roster: every agent folder with its track record. Also checks due calls in the background. */
+  listAgents(): AgentProjectView[] {
+    void this.scoreAgents(true);
+    return this.projects.list(new Set(teamAgents(this.cfg).map((a) => a.id)));
+  }
+
+  /** Folder, CLAUDE.md text (for API providers) and track record for one call. */
+  private agentCall(agent: AgentRef, symbol: TradingSymbol, call: LlmCall): LlmCall {
+    try {
+      const workdir = this.projects.ensure(agent);
+      const memory = this.projects.memoryBlock(agent.id, symbol);
+      const instructions = this.projects.instructionsForApi(agent.id);
+      return {
+        ...call,
+        system: memory ? `${call.system}\n\n${memory}` : call.system,
+        workdir, sessionKey: symbol,
+        ...(instructions ? { instructions } : {})
+      };
+    } catch (e) {
+      this.projectError(e);
+      return call;
+    }
+  }
+
+  /** Save what an agent wrote; record its call (if it made one) for scoring. */
+  private agentOutput(agent: AgentRef, o: {
+    symbol: TradingSymbol; runId: string; kind: 'pipeline' | 'bias'; price: number;
+    text: string; vote: string | null; confidence: number | null; voters?: Voter[];
+  }): void {
+    try {
+      const ts = this.now();
+      this.projects.writeOutput(agent, o.symbol, ts, o.runId, o.text, o.vote);
+      if (o.vote === null) return;
+      this.projects.recordOpinion(agent, {
+        ts, symbol: o.symbol, runId: o.runId, kind: o.kind, vote: o.vote, confidence: o.confidence,
+        price: o.price, horizonMs: OPINION_HORIZON_MS[o.kind], summary: opinionSummary(o.text)
+      });
+      if (o.voters && voteDirection(o.vote) !== 0) o.voters.push({ agent, vote: o.vote, confidence: o.confidence });
+    } catch (e) {
+      this.projectError(e);
+    }
+  }
+
+  private pipelineHooks(symbol: TradingSymbol, runId: string, price: number, voters: Voter[]): AgentHooks {
+    return {
+      context: (agent) => {
+        const c = this.agentCall(agent, symbol, { role: agent.id, tier: 'quick', system: '', prompt: '' });
+        return { workdir: c.workdir, instructions: c.instructions, memory: c.system.trim() || undefined };
+      },
+      onOutput: (agent, out) => this.agentOutput(agent, { symbol, runId, kind: 'pipeline', price, ...out, voters })
+    };
+  }
+
+  /** A past price: the live one when it is that moment, else the 1-minute candle that opened then. */
+  private async priceAt(symbol: TradingSymbol, ts: number): Promise<number | null> {
+    const m = this.snap.markets[symbol];
+    if (m && Math.abs(m.updatedAt - ts) < 90_000) return m.price;
+    const k = await this.market.client.klinesFrom(symbol, '1m', ts, 1);
+    return k[0] && k[0].openTime - ts < 5 * 60_000 ? k[0].open : null;
+  }
+
+  /** Check every call whose horizon has passed against the price then (at most once a minute). */
+  async scoreAgents(force = false): Promise<number> {
+    if (this.scoring || (!force && this.now() - this.lastScoreAt < 60_000)) return 0;
+    this.scoring = true;
+    this.lastScoreAt = this.now();
+    let n = 0;
+    try {
+      const due = this.projects.due(this.now()).slice(0, 300);
+      const prices = new Map<string, number | null>();
+      for (const d of due) {
+        const target = d.opinion.ts + d.opinion.horizonMs;
+        const key = `${d.opinion.symbol}:${Math.floor(target / 60_000)}`;
+        if (!prices.has(key)) prices.set(key, await this.priceAt(d.opinion.symbol, target).catch(() => null));
+        const p = prices.get(key);
+        if (p && this.projects.score(d.id, d.opinion.id, p)) n++;
+      }
+    } catch (e) {
+      this.projectError(e);
+    } finally {
+      this.scoring = false;
+    }
+    if (n) this.emitSoon();
+    return n;
+  }
+
+  /** A closed agents-mode trade goes into the lessons file of every agent that made a directional call on it. */
+  private agentLessons(t: TradeView): void {
+    const origin = this.openDecision[t.symbol];
+    if (!origin?.voters.length) return;
+    const side = t.side === 'LONG' ? 1 : -1;
+    const won = t.pnl > 0;
+    const day = new Date(t.closedAt + 9 * 3_600_000).toISOString().slice(5, 16).replace('T', ' ');
+    for (const v of origin.voters) {
+      const aligned = voteDirection(v.vote) === side;
+      const right = aligned === won;
+      const conf = v.confidence !== null ? ` ${v.confidence.toFixed(2)}` : '';
+      try {
+        this.projects.addLesson(v.agent, `${day} KST ${t.symbol} ${t.side === 'LONG' ? '롱' : '숏'} 거래 종료(${t.exitReason}) 손익 ${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)} USDT — 너의 판단 ${voteKo(v.vote)}${conf}: 거래 방향과 ${aligned ? '같음' : '반대'}, ${right ? '판단이 맞았음' : '판단이 틀렸음'}`);
+      } catch (e) { this.projectError(e); }
+    }
   }
 
   private now(): number { return (this.deps.now ?? Date.now)(); }
@@ -183,6 +319,7 @@ export class TradingEngine {
     const venueChanged = n.venue !== this.cfg.venue;
     this.cfg = n;
     this.llm = null; // rebuilt lazily with the new settings
+    this.ensureTeam();
     if (!this.running) {
       if (venueChanged) {
         // The previous venue's broker, positions and account must not be acted on.
@@ -316,6 +453,7 @@ export class TradingEngine {
     if (this.snap.trades.length > MAX_TRADES) this.snap.trades.length = MAX_TRADES;
     this.lastExitAt[t.symbol] = t.closedAt;
     this.safeJournal({ type: 'trade', trade: t });
+    if (t.source === 'agents') this.agentLessons(t);
     const sign = t.pnl >= 0 ? '+' : '';
     this.log(`${t.symbol} ${t.side === 'LONG' ? '롱' : '숏'} 종료(${t.exitReason}) ${fmtPrice(t.entryPrice)} → ${fmtPrice(t.exitPrice)} · 손익 ${sign}${t.pnl.toFixed(2)} USDT`, 'trade', t.symbol);
     this.notify(`${t.symbol} ${t.exitReason} (${VENUE_KO[this.cfg.venue]})`,
@@ -410,6 +548,7 @@ export class TradingEngine {
       } else {
         for (const s of this.cfg.symbols) await this.scalpStep(s);
       }
+      void this.scoreAgents();
     } catch (e) {
       this.log(`루프 오류: ${e instanceof Error ? e.message : e}`, 'error');
     } finally {
@@ -473,7 +612,7 @@ export class TradingEngine {
       if (verdict.approved && verdict.plan) {
         this.log(`${p.symbol} 지정가 ${fmtPrice(p.limitPrice)} 도달 — 진입`, 'info', p.symbol);
         const pos = await this.openPlan(verdict.plan, 'agents');
-        if (pos) this.openDecision[p.symbol] = { runId: p.runId, summary: p.decision.summary };
+        if (pos) this.openDecision[p.symbol] = { runId: p.runId, summary: p.decision.summary, voters: p.voters };
       } else {
         this.log(`${p.symbol} 지정가 도달했으나 리스크 엔진 거부: ${verdict.reason}`, 'warn', p.symbol);
       }
@@ -578,6 +717,7 @@ export class TradingEngine {
       const lessons = this.journal.lessons(symbol, 5).map((l) => `- ${l.lesson}`).join('\n');
       const ctx = { symbol, snapshot, portfolio: this.portfolioText(symbol), lessons, constraints: this.constraints() };
       const llm = this.getLlm();
+      const voters: Voter[] = [];
       const result = await runPipeline({
         ctx,
         analysts: this.cfg.agents.analysts,
@@ -586,6 +726,7 @@ export class TradingEngine {
         teams: this.cfg.teams
       }, {
         llm,
+        agents: this.pipelineHooks(symbol, run.id, snapshot.price, voters),
         onStep: (s) => this.setStep(run, s),
         aborted: () => this.stopping && execute,
         now: this.deps.now
@@ -607,7 +748,7 @@ export class TradingEngine {
       // stopped) has no loop, so it uses the snapshot it just took.
       const m = this.snap.markets[symbol];
       const price = m && this.now() - m.updatedAt < 60_000 ? m.price : snapshot.price;
-      const verdict = await this.applyDecision(symbol, result.decision, price, execute, run.id);
+      const verdict = await this.applyDecision(symbol, result.decision, price, execute, run.id, voters);
       run.verdict = verdict;
       this.setStep(run, {
         role: 'riskEngine', state: 'done', finishedAt: this.now(),
@@ -637,7 +778,7 @@ export class TradingEngine {
   }
 
   /** Turn the PM's decision into broker actions. Returns the verdict shown in the UI. */
-  private async applyDecision(symbol: TradingSymbol, d: FinalDecision, price: number, execute: boolean, runId: string): Promise<RiskVerdict> {
+  private async applyDecision(symbol: TradingSymbol, d: FinalDecision, price: number, execute: boolean, runId: string, voters: Voter[] = []): Promise<RiskVerdict> {
     const pos = this.snap.positions.find((p) => p.symbol === symbol);
     const exec = (step: string) => this.setStep(this.snap.runs.find((r) => r.id === runId)!, { role: 'execution', state: 'done', finishedAt: this.now(), content: step });
     const noExec = (v: RiskVerdict): RiskVerdict => {
@@ -694,13 +835,13 @@ export class TradingEngine {
 
     if (verdict.plan.entryType === 'LIMIT') {
       this.pending = this.pending.filter((p) => p.symbol !== symbol);
-      this.pending.push({ symbol, decision: d, limitPrice: verdict.plan.entryPrice, expiresAt: this.now() + this.cfg.agents.limitEntryTtlMinutes * 60_000, runId });
+      this.pending.push({ symbol, decision: d, limitPrice: verdict.plan.entryPrice, expiresAt: this.now() + this.cfg.agents.limitEntryTtlMinutes * 60_000, runId, voters });
       exec(`지정가 ${fmtPrice(verdict.plan.entryPrice)} 도달 시 진입 대기 (${this.cfg.agents.limitEntryTtlMinutes}분)`);
       return verdict;
     }
     const opened = await this.openPlan(verdict.plan, 'agents');
     if (opened) {
-      this.openDecision[symbol] = { runId, summary: d.summary };
+      this.openDecision[symbol] = { runId, summary: d.summary, voters };
       exec(`체결: ${opened.side === 'LONG' ? '롱' : '숏'} ${opened.quantity} @ ${fmtPrice(opened.entryPrice)}`);
       return verdict;
     }
@@ -716,8 +857,10 @@ export class TradingEngine {
     let lesson = `${t.side === 'LONG' ? '롱' : '숏'} 결과: ${outcome}.`;
     try {
       const p = reflectionPrompt(t.symbol, origin?.summary ?? '(결정 요약 없음)', outcome);
-      const text = await this.getLlm().complete({ role: `reflection-${t.symbol}`, tier: 'quick', system: p.system, prompt: p.prompt, maxTokens: 600 });
+      const agent = agentRef('reflection');
+      const text = await this.getLlm().complete(this.agentCall(agent, t.symbol, { role: `reflection-${t.symbol}`, tier: 'quick', system: p.system, prompt: p.prompt, maxTokens: 600 }));
       lesson = text.trim().replace(/\s+/g, ' ').slice(0, 600);
+      this.agentOutput(agent, { symbol: t.symbol, runId: origin?.runId ?? 'trade', kind: 'pipeline', price: t.exitPrice, text: `${outcome}\n\n${text.trim()}`, vote: null, confidence: null });
     } catch (e) {
       this.log(`회고 생성 실패(결과만 기록): ${e instanceof Error ? e.message : e}`, 'warn', t.symbol);
     }
@@ -818,8 +961,10 @@ export class TradingEngine {
       let parsed: { bias: BiasDirection; confidence: number; note: string };
       let content: string;
       if (n === 1) {
-        const text = await llm.complete({ role: `biasDesk-${symbol}`, tier: 'quick', system: prompt.system, prompt: prompt.prompt, maxTokens: 900 });
+        const agent = agentRef('biasDesk');
+        const text = await llm.complete(this.agentCall(agent, symbol, { role: `biasDesk-${symbol}`, tier: 'quick', system: prompt.system, prompt: prompt.prompt, maxTokens: 900 }));
         const one = parseBias(text);
+        this.agentOutput(agent, { symbol, runId: run.id, kind: 'bias', price: snapshot.price, text: text.trim(), vote: one?.bias ?? null, confidence: one?.confidence ?? null });
         if (!one) throw new Error('방향 필터 JSON을 읽지 못했습니다');
         parsed = one;
         content = text.trim();
@@ -831,8 +976,10 @@ export class TradingEngine {
           this.setStep(run, { role: 'biasDesk', id, member, persona, state: 'running', startedAt: this.now() });
           try {
             const mp = withMember(prompt, memberRule('biasDesk', member, n, biasPanelClosing(rule)));
-            const text = await llm.complete({ role: `biasDesk_${member}-${symbol}`, tier: 'quick', system: mp.system, prompt: mp.prompt, maxTokens: 900 });
+            const agent = agentRef('biasDesk', { persona });
+            const text = await llm.complete(this.agentCall(agent, symbol, { role: `biasDesk_${member}-${symbol}`, tier: 'quick', system: mp.system, prompt: mp.prompt, maxTokens: 900 }));
             const result = parseBias(text);
+            this.agentOutput(agent, { symbol, runId: run.id, kind: 'bias', price: snapshot.price, text: text.trim(), vote: result?.bias ?? null, confidence: result?.confidence ?? null });
             if (!result) throw new Error('JSON을 읽지 못했습니다');
             this.setStep(run, { role: 'biasDesk', id, state: 'done', finishedAt: this.now(), content: text.trim(), vote: result.bias, confidence: result.confidence });
             return { member, persona, result, text: text.trim(), error: undefined as string | undefined };

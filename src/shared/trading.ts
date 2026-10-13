@@ -708,6 +708,93 @@ export function biasSkeleton(t: TeamSettings): AgentStepView[] {
   return seats('biasDesk', t.biasPanel, { lead: true });
 }
 
+// ─── agent projects ──────────────────────────────────────────────────────────
+
+/** One LLM agent on the desk: a role, optionally one seat's specialty or the team's lead. */
+export interface AgentRef {
+  /** Stable id = the agent's project folder name (see agentIdOf). */
+  id: string;
+  role: AgentRole;
+  persona?: string;
+  lead?: boolean;
+}
+
+/**
+ * "technical" (one-agent role), "technical-trend" (a seat), "technical-lead"
+ * (the team lead). Seat k always has the k-th persona, so an agent keeps its
+ * folder, instructions and record when the team grows or shrinks.
+ */
+export function agentIdOf(role: AgentRole, opts: { persona?: string; lead?: boolean } = {}): string {
+  if (opts.lead) return `${role}-lead`;
+  if (opts.persona) return `${role}-${opts.persona}`;
+  return role;
+}
+
+export function agentRef(role: AgentRole, opts: { persona?: string; lead?: boolean } = {}): AgentRef {
+  return { id: agentIdOf(role, opts), role, ...(opts.persona ? { persona: opts.persona } : {}), ...(opts.lead ? { lead: true } : {}) };
+}
+
+/** Steps that are code, not an LLM agent (the risk engine, execution, the committee/panel tallies). */
+export function isAgentStep(s: Pick<AgentStepView, 'role' | 'lead'>): boolean {
+  if (s.role === 'riskEngine' || s.role === 'execution') return false;
+  if (s.lead && (s.role === 'portfolioManager' || s.role === 'biasDesk')) return false;
+  return true;
+}
+
+/** Every LLM agent the desk uses with this config (each gets a project folder). */
+export function teamAgents(cfg: TradingConfig): AgentRef[] {
+  const steps = [...pipelineSkeleton(cfg.agents.analysts, cfg.teams), ...biasSkeleton(cfg.teams)];
+  const out = new Map<string, AgentRef>();
+  for (const s of steps) {
+    if (s.state === 'skipped' || !isAgentStep(s)) continue;
+    const r = agentRef(s.role, { persona: s.persona, lead: s.lead });
+    out.set(r.id, r);
+  }
+  out.set('reflection', agentRef('reflection'));
+  return [...out.values()];
+}
+
+/** Roles whose output is an argument, not a call: kept, never scored. */
+export const UNSCORED_ROLES: readonly AgentRole[] = ['bull', 'bear', 'aggressive', 'conservative', 'neutral', 'reflection'];
+
+/** +1 for a bullish call, −1 bearish, 0 for anything that is not a direction. */
+export function voteDirection(vote: string | null | undefined): 1 | -1 | 0 {
+  switch (vote) {
+    case 'Bullish': case 'LONG': case 'LONG_ONLY': case 'Buy': case 'Overweight': return 1;
+    case 'Bearish': case 'SHORT': case 'SHORT_ONLY': case 'Sell': case 'Underweight': return -1;
+    default: return 0;
+  }
+}
+
+/** One agent's folder and track record, for the roster tab. */
+export interface AgentProjectView {
+  id: string;
+  role: AgentRole;
+  persona?: string;
+  lead?: boolean;
+  folder: string;
+  /** Opinions recorded (every run the agent answered in with a vote). */
+  opinions: number;
+  /** Reports / debate turns kept in its outputs folder (debaters have outputs but no votes). */
+  outputs: number;
+  /** Directional calls whose horizon has passed and were checked against the price. */
+  scored: number;
+  hits: number;
+  /** hits / scored, null before the first scored call. */
+  hitRate: number | null;
+  /** Mean price move in the called direction, basis points (positive = the calls made money on average). */
+  avgEdgeBps: number | null;
+  /** Directional calls still waiting for their horizon. */
+  pending: number;
+  lastAt?: number;
+  lastVote?: string;
+  lastSymbol?: TradingSymbol;
+  /** The user wrote something under "내 지침" in the agent's CLAUDE.md. */
+  customized: boolean;
+  /** Part of the current team settings (else: a former seat whose folder is kept). */
+  active: boolean;
+}
+
 /** LLM calls one run makes with these settings (JSON repair turns not counted). */
 export function estimateLlmCalls(cfg: TradingConfig): { pipeline: number; pipelinePerHour: number; bias: number; biasPerHour: number } {
   const t = cfg.teams;

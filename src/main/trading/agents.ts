@@ -34,19 +34,34 @@ import {
 } from './prompts';
 import { parseFinalDecision, parseRating, parseTraderAction } from './decision';
 import {
-  ANALYST_MEMBER_CLOSING, CONSENSUS_KO, DEBATE_MEMBER_CLOSING, TRADER_MEMBER_CLOSING,
+  ANALYST_MEMBER_CLOSING, CONSENSUS_KO, DEBATE_MEMBER_CLOSING, STANCE_SPEC, TRADER_MEMBER_CLOSING,
   actionTally, aggregateCommittee, analystLeadPrompt, committeeClosing, committeeMinutes,
   fallbackAnalystMerge, fallbackTraderMerge, headTraderPrompt, memberRule, parseStance,
   personaKey, personaOf, speakerName, stanceLabel, stanceTally, withMember, type MemberOutput
 } from './teams';
 import {
-  ANALYST_KEYS, TEAM_LIMITS, stepId,
-  type AgentRole, type AgentStepView, type AnalystKey, type CommitteeView, type ConsensusRule,
+  ANALYST_KEYS, TEAM_LIMITS, agentRef, stepId,
+  type AgentRef, type AgentRole, type AgentStepView, type AnalystKey, type CommitteeView, type ConsensusRule,
   type FinalDecision, type Rating, type TeamRole, type TeamSettings, type TradeAction
 } from '../../shared/trading';
 
+/**
+ * Per-agent project hooks (see agentProjects.ts). Optional: without them every
+ * agent runs as before, from the shared session folder and with no memory.
+ */
+export interface AgentHooks {
+  /** About to call `agent`: its folder (its session runs there), its CLAUDE.md text for API providers, its track record. */
+  context(agent: AgentRef): { workdir?: string; instructions?: string; memory?: string };
+  /** `agent` answered. `vote` is its machine-read call, null when the role has none (debaters). */
+  onOutput(agent: AgentRef, out: { text: string; vote: string | null; confidence: number | null }): void;
+}
+
+/** A one-agent analyst also ends with a Stance line, so its calls can be scored like a seat's. */
+const SOLO_ANALYST_CLOSING = `보고서 맨 끝에 너의 결론을 다음 두 줄로 붙여라(라벨과 값은 영어 그대로):\n${STANCE_SPEC}`;
+
 export interface PipelineDeps {
   llm: LlmClient;
+  agents?: AgentHooks;
   /** Called whenever a step changes state (running/done/error/skipped). */
   onStep: (step: AgentStepView) => void;
   /** Checked between steps; return true to abort (engine stopping). */
@@ -138,17 +153,33 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   const startedAt = (role: AgentRole, member?: number) => steps.get(member ? stepId(role, member) : role)?.startedAt ?? now();
   const checkAbort = () => { if (deps.aborted?.()) throw new PipelineAborted(); };
 
-  /** LLM role key — also the hidden session's folder, so every seat gets its own. */
+  /** LLM role key — also the hidden session's folder when the agent has no project folder. */
   const llmKey = (role: string, member?: number | 'lead') =>
     member === undefined ? role : member === 'lead' ? `${role}_lead` : `${role}_${member}`;
-  const call = async (key: string, tier: 'quick' | 'deep', p: { system: string; prompt: string }, maxTokens?: number) => {
+  /** The agent behind a step: a seat's persona, the team lead, or the one agent of the role. */
+  const refOf = (role: AgentRole, member?: number | 'lead'): AgentRef =>
+    typeof member === 'number' ? agentRef(role, { persona: personaKey(role as TeamRole, member) })
+      : member === 'lead' ? agentRef(role, { lead: true }) : agentRef(role);
+  const call = async (key: string, tier: 'quick' | 'deep', p: { system: string; prompt: string }, agent?: AgentRef) => {
     checkAbort();
+    let extra: ReturnType<AgentHooks['context']> = {};
+    if (agent && deps.agents) {
+      try { extra = deps.agents.context(agent); } catch { /* a missing folder must not stop the run */ }
+    }
     try {
-      return await deps.llm.complete({ role: `${key}-${ctx.symbol}`, tier, system: p.system, prompt: p.prompt, maxTokens });
+      return await deps.llm.complete({
+        role: `${key}-${ctx.symbol}`, tier, prompt: p.prompt,
+        system: extra.memory ? `${p.system}\n\n${extra.memory}` : p.system,
+        ...(extra.workdir ? { workdir: extra.workdir, sessionKey: ctx.symbol } : {}),
+        ...(extra.instructions ? { instructions: extra.instructions } : {})
+      });
     } catch (e) {
       if (deps.aborted?.()) throw new PipelineAborted();
       throw e;
     }
+  };
+  const report = (agent: AgentRef, text: string, vote: string | null, confidence: number | null = null) => {
+    try { deps.agents?.onOutput(agent, { text, vote, confidence }); } catch { /* bookkeeping only */ }
   };
 
   // ── 1. analysts, in parallel ─────────────────────────────────────────────
@@ -162,9 +193,12 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
     if (nA === 1) {
       emit(key, undefined, { state: 'running', startedAt: now() });
       try {
-        const text = await call(key, 'quick', ANALYST_PROMPTS[key](ctx));
+        const agent = refOf(key);
+        const text = await call(key, 'quick', withMember(ANALYST_PROMPTS[key](ctx), SOLO_ANALYST_CLOSING), agent);
         reports[key] = text.trim();
-        emit(key, undefined, { state: 'done', finishedAt: now(), content: reports[key] });
+        const st = parseStance(reports[key]);
+        report(agent, reports[key], st.stance, st.confidence);
+        emit(key, undefined, { state: 'done', finishedAt: now(), content: reports[key], vote: st.stance ?? undefined, confidence: st.confidence ?? undefined });
       } catch (e) {
         if (e instanceof PipelineAborted) throw e;
         // Fail open like TradingAgents: the debate proceeds with the reports it has.
@@ -179,8 +213,10 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       emit(key, member, { state: 'running', startedAt: now() });
       try {
         const p = withMember(ANALYST_PROMPTS[key](ctx), memberRule(key, member, nA, ANALYST_MEMBER_CLOSING));
-        const text = (await call(llmKey(key, member), 'quick', p)).trim();
+        const agent = refOf(key, member);
+        const text = (await call(llmKey(key, member), 'quick', p, agent)).trim();
         const st = parseStance(text);
+        report(agent, text, st.stance, st.confidence);
         emit(key, member, { state: 'done', finishedAt: now(), content: text, vote: st.stance ?? undefined, confidence: st.confidence ?? undefined });
         return { member, persona, name, text, vote: st.stance, confidence: st.confidence };
       } catch (e) {
@@ -203,7 +239,10 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       note = `팀원 ${nA}명 중 ${ok[0].member}번만 응답해 그 보고서를 그대로 사용`;
     } else {
       try {
-        merged = (await call(llmKey(key, 'lead'), 'quick', analystLeadPrompt(ctx, key, members))).trim();
+        const agent = refOf(key, 'lead');
+        merged = (await call(llmKey(key, 'lead'), 'quick', analystLeadPrompt(ctx, key, members), agent)).trim();
+        const lst = parseStance(merged);
+        report(agent, merged, lst.stance, lst.confidence);
       } catch (e) {
         if (e instanceof PipelineAborted) throw e;
         merged = fallbackAnalystMerge(key, members);
@@ -247,7 +286,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
         let text: string;
         try {
           const p = member ? withMember(base, memberRule(side, member, nR, DEBATE_MEMBER_CLOSING)) : base;
-          text = (await call(llmKey(side, member), 'quick', p)).trim();
+          text = (await call(llmKey(side, member), 'quick', p, refOf(side, member))).trim();
+          report(refOf(side, member), text, null);
         } catch (e) {
           // A solo debate cannot go on without one side; a staffed one can.
           if (e instanceof PipelineAborted || !member) throw e;
@@ -267,8 +307,9 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
 
   // ── 3. research manager ──────────────────────────────────────────────────
   emit('researchManager', undefined, { state: 'running', startedAt: now() });
-  const investmentPlan = (await call('researchManager', 'deep', researchManagerPrompt(ctx, investmentHistory))).trim();
+  const investmentPlan = (await call('researchManager', 'deep', researchManagerPrompt(ctx, investmentHistory), refOf('researchManager'))).trim();
   const researchRating = parseRating(investmentPlan);
+  report(refOf('researchManager'), investmentPlan, researchRating);
   emit('researchManager', undefined, { state: 'done', finishedAt: now(), content: investmentPlan });
 
   // ── 4. trader(s) ─────────────────────────────────────────────────────────
@@ -277,7 +318,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   let traderMembers: MemberOutput[] = [];
   if (nT === 1) {
     emit('trader', undefined, { state: 'running', startedAt: now() });
-    traderPlan = (await call('trader', 'quick', traderPrompt(ctx, investmentPlan, reports.technical))).trim();
+    traderPlan = (await call('trader', 'quick', traderPrompt(ctx, investmentPlan, reports.technical), refOf('trader'))).trim();
+    report(refOf('trader'), traderPlan, parseTraderAction(traderPlan));
     emit('trader', undefined, { state: 'done', finishedAt: now(), content: traderPlan, vote: parseTraderAction(traderPlan) ?? undefined });
   } else {
     traderMembers = await Promise.all(range(nT).map(async (member): Promise<MemberOutput> => {
@@ -286,8 +328,9 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       emit('trader', member, { state: 'running', startedAt: now() });
       try {
         const p = withMember(traderPrompt(ctx, investmentPlan, reports.technical), memberRule('trader', member, nT, TRADER_MEMBER_CLOSING));
-        const text = (await call(llmKey('trader', member), 'quick', p)).trim();
+        const text = (await call(llmKey('trader', member), 'quick', p, refOf('trader', member))).trim();
         const action = parseTraderAction(text);
+        report(refOf('trader', member), text, action);
         emit('trader', member, { state: 'done', finishedAt: now(), content: text, vote: action ?? undefined });
         return { member, persona, name, text, vote: action, confidence: null };
       } catch (e) {
@@ -305,7 +348,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       note = `트레이더 ${nT}명 중 ${ok[0].member}번만 응답해 그 제안을 그대로 사용`;
     } else {
       try {
-        traderPlan = (await call(llmKey('trader', 'lead'), 'quick', headTraderPrompt(ctx, investmentPlan, reports.technical, traderMembers))).trim();
+        traderPlan = (await call(llmKey('trader', 'lead'), 'quick', headTraderPrompt(ctx, investmentPlan, reports.technical, traderMembers), refOf('trader', 'lead'))).trim();
+        report(refOf('trader', 'lead'), traderPlan, parseTraderAction(traderPlan));
       } catch (e) {
         if (e instanceof PipelineAborted) throw e;
         traderPlan = fallbackTraderMerge(traderMembers);
@@ -336,7 +380,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
         let text: string;
         try {
           const p = member ? withMember(base, memberRule(role, member, nK, DEBATE_MEMBER_CLOSING)) : base;
-          text = (await call(llmKey(role, member), 'quick', p)).trim();
+          text = (await call(llmKey(role, member), 'quick', p, refOf(role, member))).trim();
+          report(refOf(role, member), text, null);
         } catch (e) {
           if (e instanceof PipelineAborted || !member) throw e;
           emit(role, member, { state: 'error', finishedAt: now(), error: errText(e) });
@@ -357,8 +402,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   // ── 6. portfolio manager / committee ─────────────────────────────────────
   const pmPrompt = portfolioManagerPrompt(ctx, investmentPlan, traderPlan, riskHistory.trim());
   /** One PM's decision, with one cheap repair turn if the JSON block is missing. */
-  const decide = async (key: string, p: { system: string; prompt: string }) => {
-    let text = (await call(key, 'deep', p)).trim();
+  const decide = async (key: string, p: { system: string; prompt: string }, agent: AgentRef) => {
+    let text = (await call(key, 'deep', p, agent)).trim();
     let parsed = parseFinalDecision(text);
     if (!parsed.parsedJson) {
       try {
@@ -376,6 +421,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
         /* keep the text-only parse (rating → action, no prices) */
       }
     }
+    report(agent, text, parsed.decision.action, parsed.decision.confidence);
     return { text, ...parsed };
   };
 
@@ -386,7 +432,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   let committee: CommitteeView | undefined;
   if (nP === 1) {
     emit('portfolioManager', undefined, { state: 'running', startedAt: now() });
-    const r = await decide('portfolioManager', pmPrompt);
+    const r = await decide('portfolioManager', pmPrompt, refOf('portfolioManager'));
     finalText = r.text;
     decision = r.decision;
     parsedJson = r.parsedJson;
@@ -396,7 +442,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       const persona = personaKey('portfolioManager', member);
       emit('portfolioManager', member, { state: 'running', startedAt: now() });
       try {
-        const r = await decide(llmKey('portfolioManager', member), withMember(pmPrompt, memberRule('portfolioManager', member, nP, committeeClosing(teams.consensus))));
+        const r = await decide(llmKey('portfolioManager', member), withMember(pmPrompt, memberRule('portfolioManager', member, nP, committeeClosing(teams.consensus))), refOf('portfolioManager', member));
         emit('portfolioManager', member, {
           state: 'done', finishedAt: now(), content: r.text, vote: r.decision.action, confidence: r.decision.confidence,
           error: r.parsedJson ? undefined : 'JSON 없음 — 등급만 반영'

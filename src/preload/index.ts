@@ -10,10 +10,10 @@ import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
 import type { HeroPayload } from '../shared/heroPayload';
 import type {
-  TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
+  AgentProjectView, TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
 } from '../shared/trading';
 export type {
-  TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
+  AgentProjectView, TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
 } from '../shared/trading';
 export type { HeroPayload } from '../shared/heroPayload';
 import type { ModelCatalog } from '../shared/modelCatalogPayload';
@@ -1319,6 +1319,14 @@ const api = {
   tradingGetLoginItem: (): Promise<boolean> => ipcRenderer.invoke('trading:getLoginItem'),
   tradingTest: (target: 'binance' | 'llm'): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('trading:test', { target }),
+  /** Every desk agent's project folder and track record. */
+  tradingAgents: (): Promise<{ ok: boolean; root: string; agents: AgentProjectView[]; registered: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:agents'),
+  /** Open one agent's folder by id (main resolves the path), or the agents root without an id. */
+  tradingOpenAgentFolder: (id?: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:openAgentFolder', id === undefined ? {} : { id }),
+  tradingRegisterAgentsProject: (): Promise<{ ok: boolean; path?: string; already?: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:registerAgentsProject'),
   /** Throttled snapshot push from the engine. Returns an unsubscribe. */
   onTradingUpdate: (cb: (snapshot: TradingSnapshot) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, snapshot: TradingSnapshot) => cb(snapshot);

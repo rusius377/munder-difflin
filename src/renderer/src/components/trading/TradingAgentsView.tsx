@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { PixelButton } from '../PixelButton';
 import { MarkdownPreview } from '@/markdown/MarkdownPreview';
 import { card, chip, fmtAge, fmtPx, fmtTime, hint, metaRow, mono, sectionHead, useNow } from './tradingUi';
-import { stepKey, type AgentRole, type AgentRunView, type AgentStepView, type CommitteeView, type TradingSnapshot } from '@shared/trading';
+import { agentIdOf, isAgentStep, stepKey, type AgentRole, type AgentRunView, type AgentStepView, type CommitteeView, type TradingSnapshot } from '@shared/trading';
 
 /**
  * The TradingAgents pipeline as it runs: one row per agent, in graph order
@@ -227,6 +227,12 @@ export function TradingAgentsView({ snap }: { snap: TradingSnapshot | null }) {
                     <span style={chip(STATE_BG[shown.state], 'var(--cth-ink-900)')}>{t(`trading.steps.${shown.state}`)}</span>
                     <VoteChip vote={shown.vote} confidence={shown.confidence} />
                     <span style={hint}>{t(`trading.roleHints.${shown.role}`)}</span>
+                    {isAgentStep(shown) && (
+                      <PixelButton size="sm" variant="ghost" title={t('trading.agentsView.openFolderHint')}
+                        onClick={() => { void window.cth.tradingOpenAgentFolder(agentIdOf(shown.role, { persona: shown.persona, lead: shown.lead })); }}>
+                        {t('trading.agentsView.openFolder')}
+                      </PixelButton>
+                    )}
                   </div>
                   {shown.error && <div style={{ ...hint, color: 'var(--cth-status-blocked)' }}>{shown.error}</div>}
                   {shown.content ? (

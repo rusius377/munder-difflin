@@ -287,6 +287,11 @@ export class BinanceFuturesClient {
     return parseKlines(await this.publicGet('/fapi/v1/klines', { symbol, interval, limit }));
   }
 
+  /** Candles opening at or after `startTime` (ms) — used to look up a past price. */
+  async klinesFrom(symbol: string, interval: string, startTime: number, limit = 1): Promise<Kline[]> {
+    return parseKlines(await this.publicGet('/fapi/v1/klines', { symbol, interval, startTime: Math.floor(startTime), limit }));
+  }
+
   async premiumIndex(symbol: string): Promise<PremiumIndex> {
     const r = await this.publicGet<Record<string, unknown>>('/fapi/v1/premiumIndex', { symbol });
     return {

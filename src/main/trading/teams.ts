@@ -97,7 +97,7 @@ export const PERSONAS: Record<TeamRole, Record<string, Persona>> = {
   }
 };
 
-const TEAM_LABEL: Record<TeamRole, string> = {
+export const TEAM_LABEL: Record<TeamRole, string> = {
   technical: '기술적 분석 팀',
   derivatives: '파생상품 분석 팀',
   news: '뉴스 분석 팀',

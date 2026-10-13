@@ -22,6 +22,7 @@ Derived material and what was changed:
   behaviour.
 
 Everything else in this folder (Binance client, market data, indicators, risk
-engine, brokers, scalper, engine, IPC, and the multi-agent teams in `teams.ts`:
-personas, team-lead merges, committee and panel vote tallies) is original to Munder Difflin and is
+engine, brokers, scalper, engine, IPC, the multi-agent teams in `teams.ts`:
+personas, team-lead merges, committee and panel vote tallies, and the per-agent
+project folders in `agentProjects.ts`) is original to Munder Difflin and is
 covered by the repository's MIT license.

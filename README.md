@@ -527,7 +527,9 @@ multi-agent algorithm (analysts → bull/bear debate → research manager → tr
 manager) on Binance USDⓈ-M perpetuals (BTCUSDT, ETHUSDT), plus a scalping mode whose direction is filtered by an
 agent "bias desk". Every team can seat several agents with different specialties: team leads merge the analysts'
 and traders' reports, while the portfolio committee and the bias panel vote and code tallies the votes under a
-consensus rule. Paper trading by default; Binance demo and live are opt-in, and a code-enforced risk engine
+consensus rule. Each agent has its own project folder (its `CLAUDE.md` instructions, a scorecard of its calls
+checked against the market, and the trades it voted on), and is reminded of its own record before it answers.
+Paper trading by default; Binance demo and live are opt-in, and a code-enforced risk engine
 sizes every order from its stop. Reports are written in Korean. Guides (Korean): features in
 [`docs/TRADING.ko.md`](./docs/TRADING.ko.md), install-to-live-trading steps in [`docs/TRADING-SETUP.ko.md`](./docs/TRADING-SETUP.ko.md).
 Research tool, not financial advice.
