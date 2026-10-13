@@ -85,6 +85,7 @@ import { toolCatalog, type ToolStatus } from '../shared/toolCatalog';
 import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalSkill } from './skills';
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
+import { registerTradingIpc } from './trading/ipc';
 import {
   CODEX_REMOTE_SOCKET_RELATIVE,
   codexRemoteAliasPath,
@@ -3131,6 +3132,19 @@ ipcMain.handle('terminal:openAtFolder', async (_evt, cwd: unknown) => {
     });
   });
 });
+
+// ─── IPC: trading desk (TradingAgents × Binance USDⓈ-M futures) ─────────────
+// The engine lives in src/main/trading/; this only wires its snapshot push to
+// every open window (each floor shows the same desk).
+const tradingDesk = registerTradingIpc({
+  broadcast: (channel, payload) => {
+    for (const w of allWindows) {
+      if (w.isDestroyed() || w.webContents.isDestroyed()) continue;
+      w.webContents.send(channel, payload);
+    }
+  }
+});
+app.on('will-quit', () => { try { tradingDesk.dispose(); } catch { /* quitting */ } });
 
 // ─── IPC: integrations (Phase 2 registry — backend for Ryan's Settings UI) ────
 // Records are metadata only (config-backed); secrets are encrypted at rest and NEVER

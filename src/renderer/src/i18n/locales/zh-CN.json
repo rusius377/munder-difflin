@@ -397,7 +397,8 @@
       "graph": "图谱",
       "activity": "动态",
       "skills": "技能",
-      "workers": "工人"
+      "workers": "工人",
+      "trading": "交易"
     },
     "terminalFullscreen": "终端已全屏打开。按 Esc 返回。",
     "noTerminal": "{{name}} 没有实时终端。",
@@ -1405,5 +1406,321 @@
     "viewSource": "查看源码",
     "loading": "正在加载图片…",
     "decodeFailed": "无法解码此图片——文件可能已损坏或扩展名有误"
+  },
+  "trading": {
+    "title": "交易台",
+    "subtitle": "TradingAgents × 币安 USDⓈ-M 合约",
+    "disclaimer": "这是研究工具，不构成投资建议。杠杆合约的亏损可能超出预期。请先用模拟交易验证结果，再使用真实资金。",
+    "tabs": {
+      "overview": "概览",
+      "agents": "智能体",
+      "trades": "成交记录",
+      "log": "日志",
+      "settings": "设置"
+    },
+    "status": {
+      "stopped": "已停止",
+      "starting": "启动中",
+      "running": "运行中",
+      "stopping": "停止中",
+      "halted": "暂停开仓",
+      "error": "错误"
+    },
+    "modes": {
+      "agents": "智能体算法",
+      "scalping": "剥头皮"
+    },
+    "modeHints": {
+      "agents": "完整的 TradingAgents 流程：四位分析师并行分析 → 多空研究员辩论 → 研究经理 → 交易员 → 三方风险辩论 → 投资组合经理最终决策。每个交易对按固定间隔运行。",
+      "scalping": "基于短周期K线和盘口的快速规则循环（多空评分、ATR 止损止盈、时间止损、保本移动）。每隔几分钟，智能体方向过滤器会限定只做多、只做空、双向或不交易。"
+    },
+    "venues": {
+      "paper": "模拟交易",
+      "demo": "币安模拟盘",
+      "live": "实盘"
+    },
+    "venueHints": {
+      "paper": "在本地用币安实时价格模拟，包含手续费、滑点、资金费率与止损止盈成交。不需要 API 密钥。",
+      "demo": "在币安合约模拟环境（demo-fapi.binance.com）下真实订单。需要在 demo.binance.com 创建的模拟 API 密钥。",
+      "live": "用真实资金在你的币安合约账户下单。"
+    },
+    "live": {
+      "banner": "实盘交易中：订单使用真实资金。",
+      "warnTitle": "你即将用真实资金交易",
+      "warnBody": "智能体和剥头皮策略都可能出错，价格可能跳空穿过止损，杠杆会放大亏损。下面的风控限制由代码强制执行，但无法避免亏损。API 密钥请只开启合约交易、关闭提现，并设置 IP 白名单。",
+      "ack": "我了解这会下真实订单，并且可能亏损。",
+      "needAck": "保存实盘设置前，请先勾选风险确认。"
+    },
+    "actions": {
+      "start": "启动",
+      "stop": "停止",
+      "runNow": "立即分析 {{symbol}}",
+      "runNowHint": "立即运行完整的智能体流程。交易台停止时只做分析，不会下单。",
+      "biasNow": "刷新 {{symbol}} 方向",
+      "biasNowHint": "立即向智能体方向过滤器获取新的方向。",
+      "close": "平仓",
+      "closeYes": "平掉仓位",
+      "closing": "平仓中…",
+      "openReports": "打开报告文件夹",
+      "resetPaper": "重置模拟账户",
+      "save": "保存设置",
+      "saving": "保存中…",
+      "revert": "放弃修改",
+      "testBinance": "测试币安连接",
+      "testLlm": "测试 LLM 连接",
+      "testing": "测试中…"
+    },
+    "messages": {
+      "startFailed": "无法启动：{{error}}",
+      "queued": "已将 {{symbol}} 分析加入队列。",
+      "analysisOnly": "{{symbol}}：已开始仅分析运行（交易台已停止，不会下单）。",
+      "restartRequired": "已保存。模式、执行环境、交易对或 LLM 的变更需要停止并重新启动交易台后生效。",
+      "saved": "设置已保存。",
+      "saveFailed": "保存失败。",
+      "paperReset": "模拟账户已重置。"
+    },
+    "side": {
+      "LONG": "做多",
+      "SHORT": "做空"
+    },
+    "source": {
+      "agents": "智能体",
+      "scalping": "剥头皮",
+      "manual": "手动"
+    },
+    "actionNames": {
+      "LONG": "开多",
+      "SHORT": "开空",
+      "CLOSE": "平仓",
+      "HOLD": "观望"
+    },
+    "trend": {
+      "up": "上升趋势",
+      "down": "下降趋势",
+      "flat": "横盘"
+    },
+    "bias": {
+      "LONG_ONLY": "只做多",
+      "SHORT_ONLY": "只做空",
+      "BOTH": "双向",
+      "NO_TRADE": "不交易"
+    },
+    "overview": {
+      "account": "账户",
+      "noAccount": "启动交易台后显示账户。",
+      "equity": "权益",
+      "available": "可用保证金",
+      "unrealized": "未实现盈亏",
+      "realizedToday": "今日已实现",
+      "dayChange": "今日变动",
+      "tradesToday": "今日交易",
+      "tradesTodayValue": "{{count}} 笔（{{wins}} 胜 / {{losses}} 负）",
+      "dailyLimit": "每日亏损上限 −{{pct}}%",
+      "lossStreak": "连续亏损 {{count}} 次",
+      "mark": "标记价",
+      "funding": "资金费率",
+      "noPosition": "没有持仓。",
+      "closeConfirm": "以市价平仓？",
+      "sl": "止损",
+      "tp": "止盈",
+      "held": "持有",
+      "pending": "等待在 {{price}} {{side}}（截至 {{time}}）",
+      "lastDecision": "最近决策",
+      "noDecision": "暂无智能体决策。",
+      "confidence": "置信度",
+      "nextRun": "距下次分析",
+      "soon": "即将",
+      "trend": "趋势",
+      "spread": "价差",
+      "blocked": "未开仓",
+      "noSignal": "尚未评估信号。",
+      "bias": "智能体方向",
+      "biasPending": "等待方向过滤器",
+      "biasOff": "关闭（允许双向）"
+    },
+    "roles": {
+      "technical": "技术分析师",
+      "derivatives": "衍生品分析师",
+      "news": "新闻分析师",
+      "sentiment": "情绪分析师",
+      "bull": "看多研究员",
+      "bear": "看空研究员",
+      "researchManager": "研究经理",
+      "trader": "交易员",
+      "aggressive": "激进风险分析师",
+      "conservative": "保守风险分析师",
+      "neutral": "中立风险分析师",
+      "portfolioManager": "投资组合经理",
+      "riskEngine": "风控引擎",
+      "execution": "下单执行",
+      "biasDesk": "方向过滤台",
+      "reflection": "复盘"
+    },
+    "roleHints": {
+      "technical": "多周期趋势、动量、波动率与关键价位",
+      "derivatives": "资金费率、持仓量、多空比、主动买卖、盘口",
+      "news": "最近48小时的加密与宏观新闻",
+      "sentiment": "恐惧贪婪指数、群体持仓、新闻语气",
+      "bull": "主张做多",
+      "bear": "主张做空或观望",
+      "researchManager": "裁决辩论并撰写投资计划",
+      "trader": "把计划落实为入场、止损、目标与仓位",
+      "aggressive": "争取上行收益",
+      "conservative": "保护本金",
+      "neutral": "权衡双方",
+      "portfolioManager": "最终决策与机器可读的下单字段",
+      "riskEngine": "代码强制的限制：止损、仓位、杠杆、盈亏比",
+      "execution": "实际发送到交易所的订单",
+      "biasDesk": "为剥头皮确定方向的精简智能体判断",
+      "reflection": "从已平仓交易中得到的经验"
+    },
+    "steps": {
+      "pending": "等待",
+      "running": "进行中",
+      "done": "完成",
+      "error": "失败",
+      "skipped": "跳过"
+    },
+    "agentsView": {
+      "noRuns": "还没有智能体运行记录。启动交易台或点击“立即分析”。",
+      "pipelineRun": "完整流程",
+      "biasRun": "方向",
+      "groups": {
+        "analysts": "分析师团队",
+        "research": "研究团队",
+        "trader": "交易员",
+        "risk": "风险管理",
+        "desk": "交易台",
+        "bias": "剥头皮方向"
+      },
+      "decision": "最终决策",
+      "entry": "入场",
+      "limit": "限价",
+      "market": "市价",
+      "leverage": "杠杆",
+      "risk": "风险",
+      "horizon": "预计持有 {{hours}} 小时",
+      "verdict": "风控引擎",
+      "approved": "已批准",
+      "notExecuted": "未下单",
+      "working": "处理中…",
+      "noContent": "尚无内容。",
+      "selectStep": "在左侧选择一个智能体查看报告。"
+    },
+    "trades": {
+      "none": "还没有已平仓的交易。",
+      "summary": "{{count}} 笔 · 合计 {{pnl}} USDT · 胜率 {{rate}}% · 手续费 {{fees}} USDT",
+      "cols": {
+        "closedAt": "平仓时间",
+        "symbol": "交易对",
+        "side": "方向",
+        "source": "来源",
+        "qty": "数量",
+        "entry": "开仓价",
+        "exit": "平仓价",
+        "pnl": "盈亏",
+        "reason": "原因"
+      }
+    },
+    "log": {
+      "none": "暂无日志。",
+      "follow": "跟随新日志"
+    },
+    "providers": {
+      "claude-subscription": "Claude 订阅",
+      "anthropic": "Anthropic 接口",
+      "openai": "OpenAI 接口",
+      "openai-compatible": "OpenAI 兼容服务器"
+    },
+    "providerHints": {
+      "claude-subscription": "像应用中其他后台检查一样，通过隐藏会话使用你的 Claude Code 登录，无需 API 密钥。每次调用需要数十秒，完整流程需要几分钟。",
+      "anthropic": "使用 Anthropic API 密钥直接调用（按 token 计费）。",
+      "openai": "使用 OpenAI API 密钥直接调用（按 token 计费）。",
+      "openai-compatible": "任何支持 /v1/chat/completions 的服务器：Ollama、LM Studio、vLLM、OpenRouter 等。"
+    },
+    "marginTypes": {
+      "ISOLATED": "逐仓",
+      "CROSSED": "全仓"
+    },
+    "units": {
+      "sec": "秒",
+      "min": "分"
+    },
+    "settings": {
+      "runningNote": "交易台正在运行。风控和策略数值立即生效；模式、执行环境、交易对和 LLM 的变更需要重启。",
+      "secretStored": "已保存（输入新值以替换）",
+      "secretPlaceholder": "粘贴密钥",
+      "saveFirst": "请先保存再测试。",
+      "binanceIntro": "密钥使用操作系统的安全存储加密，之后不会再显示。实盘密钥请只开启合约交易、关闭提现，并设置 IP 白名单。",
+      "llmIntro": "分析师、研究员、辩论者和交易员使用快速模型；研究经理和投资组合经理使用深度模型。报告以韩语撰写。",
+      "riskIntro": "无论智能体提出什么，这些限制都会在每笔订单上由代码强制执行。仓位大小始终由止损距离和风险预算计算。",
+      "agentsIntro": "TradingAgents 设置。辩论轮数越多，论证越充分，但更慢、成本更高。",
+      "scalpingIntro": "剥头皮的信号与出场设置。某一方向得分超过阈值并明显领先另一方向时才会开仓。",
+      "sections": {
+        "general": "基本",
+        "binance": "币安 API 密钥",
+        "llm": "语言模型",
+        "risk": "风控限制",
+        "agents": "智能体算法模式",
+        "scalping": "剥头皮模式"
+      },
+      "fields": {
+        "mode": "模式",
+        "symbols": "交易对",
+        "venue": "执行环境",
+        "demoKey": "模拟盘 API 密钥",
+        "demoSecret": "模拟盘 API 私钥",
+        "liveKey": "实盘 API 密钥",
+        "liveSecret": "实盘 API 私钥",
+        "provider": "提供方",
+        "quickModel": "快速模型",
+        "deepModel": "深度模型",
+        "baseUrl": "服务器地址",
+        "timeoutSec": "单次调用超时",
+        "anthropicKey": "Anthropic API 密钥",
+        "openaiKey": "OpenAI API 密钥",
+        "compatKey": "服务器 API 密钥（可选）",
+        "paperBalanceUsdt": "模拟初始余额",
+        "riskPerTradePct": "单笔最大亏损",
+        "maxLeverage": "最大杠杆",
+        "maxNotionalPct": "最大仓位（占权益）",
+        "dailyLossLimitPct": "每日亏损上限",
+        "maxConsecutiveLosses": "最大连续亏损",
+        "takerFeePct": "吃单手续费",
+        "slippageBps": "模拟滑点",
+        "marginType": "保证金模式",
+        "analysts": "分析师",
+        "intervalMinutes": "分析间隔",
+        "debateRounds": "多空辩论轮数",
+        "riskRounds": "风险辩论轮数",
+        "minConfidence": "开仓最低置信度",
+        "minRewardRisk": "最低盈亏比",
+        "defaultLeverage": "默认杠杆",
+        "limitEntryTtlMinutes": "限价入场等待时间",
+        "reflect": "从已平仓交易中学习（复盘）",
+        "newsFeeds": "新闻 RSS 源（每行一个）",
+        "timeframe": "入场周期",
+        "trendTimeframe": "趋势周期",
+        "pollSeconds": "检查间隔",
+        "scalpLeverage": "剥头皮杠杆",
+        "minScore": "最低开仓分数",
+        "slAtr": "止损距离",
+        "tpAtr": "止盈距离",
+        "breakevenAtR": "移动到保本的时机",
+        "maxHoldMinutes": "最长持有时间",
+        "cooldownMinutes": "平仓后冷却",
+        "maxTradesPerHour": "每小时最多开仓",
+        "emaFast": "快速 EMA",
+        "emaSlow": "慢速 EMA",
+        "trendEma": "趋势 EMA",
+        "rsiPeriod": "RSI 周期",
+        "atrPeriod": "ATR 周期",
+        "maxSpreadBps": "最大价差",
+        "minAtrPct": "最低波动率（ATR）",
+        "maxAtrPct": "最高波动率（ATR）",
+        "biasRefreshMinutes": "方向刷新间隔",
+        "agentBias": "使用智能体方向过滤器"
+      }
+    }
   }
 }

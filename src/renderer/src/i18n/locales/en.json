@@ -397,7 +397,8 @@
       "graph": "graph",
       "activity": "activity",
       "skills": "skills",
-      "workers": "workers"
+      "workers": "workers",
+      "trading": "trading"
     },
     "terminalFullscreen": "Terminal is open in fullscreen. Press Esc to bring it back.",
     "noTerminal": "{{name}} has no live terminal.",
@@ -1405,5 +1406,321 @@
     "viewSource": "view source",
     "loading": "loading image…",
     "decodeFailed": "could not decode this image — the file may be corrupt or misnamed"
+  },
+  "trading": {
+    "title": "Trading desk",
+    "subtitle": "TradingAgents × Binance USDⓈ-M futures",
+    "disclaimer": "A research tool, not financial advice. Leveraged futures can lose more than you expect. Start on paper trading and check the results before using real money.",
+    "tabs": {
+      "overview": "overview",
+      "agents": "agents",
+      "trades": "trades",
+      "log": "log",
+      "settings": "settings"
+    },
+    "status": {
+      "stopped": "stopped",
+      "starting": "starting",
+      "running": "running",
+      "stopping": "stopping",
+      "halted": "entries paused",
+      "error": "error"
+    },
+    "modes": {
+      "agents": "agent algorithm",
+      "scalping": "scalping"
+    },
+    "modeHints": {
+      "agents": "The full TradingAgents pipeline: four analysts in parallel, a bull/bear research debate, research manager, trader, a three-way risk debate and the portfolio manager's final call. Runs on a fixed interval per symbol.",
+      "scalping": "A fast rule-based loop on short candles and the order book (score per side, ATR stop and target, time stop, break-even). Every few minutes an agent bias desk can restrict it to longs, shorts, both or nothing."
+    },
+    "venues": {
+      "paper": "paper",
+      "demo": "Binance demo",
+      "live": "live"
+    },
+    "venueHints": {
+      "paper": "Simulated locally on live Binance prices, with fees, slippage, funding and stop/target fills. No keys needed.",
+      "demo": "Real orders on Binance's futures demo environment (demo-fapi.binance.com). Needs demo API keys from demo.binance.com.",
+      "live": "Real orders with real money on your Binance futures account."
+    },
+    "live": {
+      "banner": "LIVE trading: orders use real money.",
+      "warnTitle": "You are about to trade real money",
+      "warnBody": "Agents and the scalper can be wrong, prices can gap through stops, and leverage multiplies losses. The risk limits below are enforced in code, but they cannot prevent losses. Use an API key with futures trading enabled, withdrawals disabled and an IP allowlist.",
+      "ack": "I understand that this places real orders and that I can lose money.",
+      "needAck": "Tick the live-trading acknowledgement before saving the live venue."
+    },
+    "actions": {
+      "start": "start",
+      "stop": "stop",
+      "runNow": "analyze {{symbol}} now",
+      "runNowHint": "Run the full agent pipeline now. When the desk is stopped this is analysis only and places no orders.",
+      "biasNow": "{{symbol}} bias now",
+      "biasNowHint": "Ask the agent bias desk for a fresh direction filter now.",
+      "close": "close",
+      "closeYes": "close position",
+      "closing": "closing…",
+      "openReports": "open reports folder",
+      "resetPaper": "reset paper account",
+      "save": "save settings",
+      "saving": "saving…",
+      "revert": "discard changes",
+      "testBinance": "test Binance connection",
+      "testLlm": "test LLM connection",
+      "testing": "testing…"
+    },
+    "messages": {
+      "startFailed": "Could not start: {{error}}",
+      "queued": "{{symbol}} analysis queued.",
+      "analysisOnly": "{{symbol}}: analysis-only run started (the desk is stopped, so no orders).",
+      "restartRequired": "Saved. Stop and start the desk to apply the mode, venue, symbol or LLM change.",
+      "saved": "Settings saved.",
+      "saveFailed": "Could not save.",
+      "paperReset": "Paper account reset."
+    },
+    "side": {
+      "LONG": "long",
+      "SHORT": "short"
+    },
+    "source": {
+      "agents": "agents",
+      "scalping": "scalping",
+      "manual": "manual"
+    },
+    "actionNames": {
+      "LONG": "go long",
+      "SHORT": "go short",
+      "CLOSE": "close",
+      "HOLD": "hold"
+    },
+    "trend": {
+      "up": "uptrend",
+      "down": "downtrend",
+      "flat": "sideways"
+    },
+    "bias": {
+      "LONG_ONLY": "longs only",
+      "SHORT_ONLY": "shorts only",
+      "BOTH": "both sides",
+      "NO_TRADE": "no trades"
+    },
+    "overview": {
+      "account": "account",
+      "noAccount": "Start the desk to see the account.",
+      "equity": "equity",
+      "available": "available",
+      "unrealized": "unrealized PnL",
+      "realizedToday": "realized today",
+      "dayChange": "change today",
+      "tradesToday": "trades today",
+      "tradesTodayValue": "{{count}} ({{wins}} wins / {{losses}} losses)",
+      "dailyLimit": "daily loss limit −{{pct}}%",
+      "lossStreak": "losing streak {{count}}",
+      "mark": "mark",
+      "funding": "funding",
+      "noPosition": "No open position.",
+      "closeConfirm": "Close at market?",
+      "sl": "stop",
+      "tp": "target",
+      "held": "held",
+      "pending": "Waiting to go {{side}} at {{price}} until {{time}}",
+      "lastDecision": "last decision",
+      "noDecision": "No agent decision yet.",
+      "confidence": "confidence",
+      "nextRun": "next analysis in",
+      "soon": "soon",
+      "trend": "trend",
+      "spread": "spread",
+      "blocked": "no entry",
+      "noSignal": "No signal evaluated yet.",
+      "bias": "agent bias",
+      "biasPending": "waiting for the bias desk",
+      "biasOff": "off (both sides allowed)"
+    },
+    "roles": {
+      "technical": "Technical analyst",
+      "derivatives": "Derivatives analyst",
+      "news": "News analyst",
+      "sentiment": "Sentiment analyst",
+      "bull": "Bull researcher",
+      "bear": "Bear researcher",
+      "researchManager": "Research manager",
+      "trader": "Trader",
+      "aggressive": "Aggressive risk analyst",
+      "conservative": "Conservative risk analyst",
+      "neutral": "Neutral risk analyst",
+      "portfolioManager": "Portfolio manager",
+      "riskEngine": "Risk engine",
+      "execution": "Execution",
+      "biasDesk": "Bias desk",
+      "reflection": "Reflection"
+    },
+    "roleHints": {
+      "technical": "multi-timeframe trend, momentum, volatility and levels",
+      "derivatives": "funding, open interest, long/short ratios, taker flow, order book",
+      "news": "crypto and macro headlines from the last 48 hours",
+      "sentiment": "fear & greed index, crowd positioning, headline tone",
+      "bull": "argues for a long",
+      "bear": "argues for a short or staying out",
+      "researchManager": "judges the debate and writes the investment plan",
+      "trader": "turns the plan into entry, stop, target and size",
+      "aggressive": "pushes for the upside",
+      "conservative": "protects capital",
+      "neutral": "weighs both sides",
+      "portfolioManager": "final decision and machine-readable order fields",
+      "riskEngine": "code-enforced limits: stop, size, leverage, reward:risk",
+      "execution": "what was actually sent to the venue",
+      "biasDesk": "compressed agent pass that filters scalping direction",
+      "reflection": "lesson learned from a closed trade"
+    },
+    "steps": {
+      "pending": "waiting",
+      "running": "working",
+      "done": "done",
+      "error": "failed",
+      "skipped": "skipped"
+    },
+    "agentsView": {
+      "noRuns": "No agent runs yet. Start the desk or press \"analyze now\".",
+      "pipelineRun": "pipeline",
+      "biasRun": "bias",
+      "groups": {
+        "analysts": "Analyst team",
+        "research": "Research team",
+        "trader": "Trader",
+        "risk": "Risk management",
+        "desk": "Desk",
+        "bias": "Scalping bias"
+      },
+      "decision": "final decision",
+      "entry": "entry",
+      "limit": "limit",
+      "market": "market",
+      "leverage": "leverage",
+      "risk": "risk",
+      "horizon": "horizon {{hours}}h",
+      "verdict": "risk engine",
+      "approved": "approved",
+      "notExecuted": "no order",
+      "working": "Working on it…",
+      "noContent": "Nothing written yet.",
+      "selectStep": "Pick an agent on the left to read its report."
+    },
+    "trades": {
+      "none": "No closed trades yet.",
+      "summary": "{{count}} trades · total {{pnl}} USDT · win rate {{rate}}% · fees {{fees}} USDT",
+      "cols": {
+        "closedAt": "closed",
+        "symbol": "symbol",
+        "side": "side",
+        "source": "source",
+        "qty": "qty",
+        "entry": "entry",
+        "exit": "exit",
+        "pnl": "PnL",
+        "reason": "reason"
+      }
+    },
+    "log": {
+      "none": "Nothing logged yet.",
+      "follow": "follow new lines"
+    },
+    "providers": {
+      "claude-subscription": "Claude subscription",
+      "anthropic": "Anthropic API",
+      "openai": "OpenAI API",
+      "openai-compatible": "OpenAI-compatible server"
+    },
+    "providerHints": {
+      "claude-subscription": "Uses your Claude Code login through a hidden session, like the app's other background checks. No API key. Each agent call takes tens of seconds, so a full pipeline takes several minutes.",
+      "anthropic": "Direct calls with an Anthropic API key (billed per token).",
+      "openai": "Direct calls with an OpenAI API key (billed per token).",
+      "openai-compatible": "Any /v1/chat/completions server: Ollama, LM Studio, vLLM, OpenRouter and so on."
+    },
+    "marginTypes": {
+      "ISOLATED": "isolated",
+      "CROSSED": "cross"
+    },
+    "units": {
+      "sec": "sec",
+      "min": "min"
+    },
+    "settings": {
+      "runningNote": "The desk is running. Risk and strategy numbers apply right away; mode, venue, symbol and LLM changes need a restart.",
+      "secretStored": "stored (enter a new value to replace)",
+      "secretPlaceholder": "paste the value",
+      "saveFirst": "Save first, then test.",
+      "binanceIntro": "Keys are encrypted with your operating system's secret store and never shown again. For live trading, enable futures only, disable withdrawals and set an IP allowlist.",
+      "llmIntro": "Analysts, researchers, debaters and the trader use the quick model; the research manager and portfolio manager use the deep model. Reports are written in the app's trading language (Korean).",
+      "riskIntro": "These limits are enforced in code on every order, whatever an agent asks for. Position size always comes from the stop distance and the risk budget.",
+      "agentsIntro": "TradingAgents settings. More debate rounds make better-argued but slower and more expensive decisions.",
+      "scalpingIntro": "Signal and exit settings for scalping. Entries need a score above the threshold on one side and a clear lead over the other.",
+      "sections": {
+        "general": "general",
+        "binance": "Binance API keys",
+        "llm": "language model",
+        "risk": "risk limits",
+        "agents": "agent algorithm mode",
+        "scalping": "scalping mode"
+      },
+      "fields": {
+        "mode": "mode",
+        "symbols": "symbols",
+        "venue": "execution venue",
+        "demoKey": "demo API key",
+        "demoSecret": "demo API secret",
+        "liveKey": "live API key",
+        "liveSecret": "live API secret",
+        "provider": "provider",
+        "quickModel": "quick model",
+        "deepModel": "deep model",
+        "baseUrl": "server URL",
+        "timeoutSec": "timeout per call",
+        "anthropicKey": "Anthropic API key",
+        "openaiKey": "OpenAI API key",
+        "compatKey": "server API key (optional)",
+        "paperBalanceUsdt": "paper starting balance",
+        "riskPerTradePct": "max loss per trade",
+        "maxLeverage": "max leverage",
+        "maxNotionalPct": "max position size (of equity)",
+        "dailyLossLimitPct": "daily loss limit",
+        "maxConsecutiveLosses": "max losing streak",
+        "takerFeePct": "taker fee",
+        "slippageBps": "paper slippage",
+        "marginType": "margin mode",
+        "analysts": "analysts",
+        "intervalMinutes": "analysis interval",
+        "debateRounds": "bull/bear rounds",
+        "riskRounds": "risk debate rounds",
+        "minConfidence": "min confidence to enter",
+        "minRewardRisk": "min reward:risk",
+        "defaultLeverage": "default leverage",
+        "limitEntryTtlMinutes": "limit entry wait",
+        "reflect": "learn from closed trades (reflection)",
+        "newsFeeds": "news RSS feeds (one per line)",
+        "timeframe": "entry timeframe",
+        "trendTimeframe": "trend timeframe",
+        "pollSeconds": "check every",
+        "scalpLeverage": "scalping leverage",
+        "minScore": "min entry score",
+        "slAtr": "stop distance",
+        "tpAtr": "target distance",
+        "breakevenAtR": "move stop to break-even at",
+        "maxHoldMinutes": "max hold time",
+        "cooldownMinutes": "cooldown after exit",
+        "maxTradesPerHour": "max entries per hour",
+        "emaFast": "fast EMA",
+        "emaSlow": "slow EMA",
+        "trendEma": "trend EMA",
+        "rsiPeriod": "RSI period",
+        "atrPeriod": "ATR period",
+        "maxSpreadBps": "max spread",
+        "minAtrPct": "min volatility (ATR)",
+        "maxAtrPct": "max volatility (ATR)",
+        "biasRefreshMinutes": "bias refresh",
+        "agentBias": "use the agent bias desk as a direction filter"
+      }
+    }
   }
 }

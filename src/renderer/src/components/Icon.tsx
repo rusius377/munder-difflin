@@ -7,7 +7,7 @@ export type IconName =
   | 'gear' | 'plus' | 'x' | 'check' | 'arrow-right' | 'pause' | 'play'
   | 'bell' | 'folder' | 'terminal' | 'code' | 'web' | 'mcp' | 'sparkle'
   | 'expand' | 'minimize' | 'clock' | 'mic' | 'ledger' | 'info' | 'sidebar'
-  | 'image' | 'edit' | 'git';
+  | 'image' | 'edit' | 'git' | 'chart';
 
 interface IconDef {
   ink: string;     // primary color path d
@@ -145,6 +145,12 @@ const paths: Record<IconName, IconDef> = {
   sidebar: {
     accentColor: 'var(--cth-ink-300)',
     ink:   'M1 3h14v10H1z M2 4h12v8H2z M2 4h4v8H2z'
+  },
+  // Three candlesticks — the trading desk. Bodies with one-pixel wicks, the
+  // middle candle tallest, like a breakout bar between two quieter ones.
+  chart: {
+    accentColor: 'var(--cth-mint)',
+    ink:   'M3 4h1v2h1v5H4v2H3v-2H2V6h1V4z M7 1h1v3h1v6H8v3H7v-3H6V4h1V1z M11 6h1v2h1v3h-1v3h-1v-3h-1V8h1V6z'
   }
 };
 

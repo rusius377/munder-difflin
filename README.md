@@ -520,10 +520,20 @@ covers the code only; the bundled pixel art is licensed separately from LimeZu a
 [`LICENSE-ASSETS`](./LICENSE-ASSETS). *Munder Difflin* is an affectionate parody and is not affiliated with NBC's *The Office* or
 Dunder Mifflin.
 
+## Trading desk (TradingAgents × Binance futures)
+
+The Command Center has a **trading** tab that runs the [TradingAgents](https://github.com/TauricResearch/TradingAgents)
+multi-agent algorithm (analysts → bull/bear debate → research manager → trader → risk debate → portfolio
+manager) on Binance USDⓈ-M perpetuals (BTCUSDT, ETHUSDT), plus a scalping mode whose direction is filtered by an
+agent "bias desk". Paper trading by default; Binance demo and live are opt-in, and a code-enforced risk engine
+sizes every order from its stop. Reports are written in Korean. Guide (Korean): [`docs/TRADING.ko.md`](./docs/TRADING.ko.md).
+Research tool, not financial advice.
+
 ## Acknowledgements
 
 - [LimeZu](https://limezu.itch.io/) for the *Modern Interiors* pixel-art tilesets (Complete Version licence).
 - [`shahar061/the-office`](https://github.com/shahar061/the-office) for the office tileset/map vendoring.
 - [Pixi.js](https://pixijs.com/) · [xterm.js](https://xtermjs.org/) · [node-pty](https://github.com/microsoft/node-pty) · [electron-vite](https://electron-vite.org/) · [CodeMirror](https://codemirror.net/) for the libraries this is built on.
 - [Remotion](https://www.remotion.dev/) for the landing page's animated "how it works" clips (`landing-remotion/`).
+- [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) (Apache-2.0) for the multi-agent trading algorithm and prompts the trading desk is derived from — see [`src/main/trading/NOTICE.md`](./src/main/trading/NOTICE.md).
 - *The Office* (US) for Munder Difflin, Inc.

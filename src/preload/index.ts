@@ -9,6 +9,12 @@ export type { UpdateStatus } from '../shared/updateState';
 import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
 import type { HeroPayload } from '../shared/heroPayload';
+import type {
+  TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
+} from '../shared/trading';
+export type {
+  TradingConfig, TradingSecretKey, TradingSecretPresence, TradingSnapshot, TradingSymbol
+} from '../shared/trading';
 export type { HeroPayload } from '../shared/heroPayload';
 import type { ModelCatalog } from '../shared/modelCatalogPayload';
 export type { ModelCatalog, CatalogModel } from '../shared/modelCatalogPayload';
@@ -1290,6 +1296,35 @@ const api = {
     ipcRenderer.invoke('integrations:remove', req),
   integrationsTest: (req: { id: string; path?: string }): Promise<{ ok: boolean; status?: number; error?: string }> =>
     ipcRenderer.invoke('integrations:test', req),
+  // ─── Trading desk (TradingAgents × Binance USDⓈ-M) ─────────────────────────
+  // Secrets are WRITE-ONLY here too: `tradingSecrets` returns presence booleans,
+  // never a value. Orders only ever originate in main (src/main/trading/engine.ts).
+  tradingGetConfig: (): Promise<TradingConfig> => ipcRenderer.invoke('trading:getConfig'),
+  tradingSaveConfig: (cfg: TradingConfig): Promise<{ ok: boolean; config?: TradingConfig; restartRequired?: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:saveConfig', cfg),
+  tradingSecrets: (): Promise<TradingSecretPresence> => ipcRenderer.invoke('trading:secrets'),
+  tradingSetSecret: (key: TradingSecretKey, value: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:setSecret', { key, value }),
+  tradingDeleteSecret: (key: TradingSecretKey): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:deleteSecret', { key }),
+  tradingSnapshot: (): Promise<TradingSnapshot> => ipcRenderer.invoke('trading:snapshot'),
+  tradingStart: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('trading:start'),
+  tradingStop: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('trading:stop'),
+  tradingRunNow: (symbol: TradingSymbol): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:runNow', { symbol }),
+  tradingClosePosition: (symbol: TradingSymbol): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('trading:closePosition', { symbol }),
+  tradingResetPaper: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('trading:resetPaper'),
+  tradingOpenReports: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('trading:openReports'),
+  tradingTest: (target: 'binance' | 'llm'): Promise<{ ok: boolean; message: string }> =>
+    ipcRenderer.invoke('trading:test', { target }),
+  /** Throttled snapshot push from the engine. Returns an unsubscribe. */
+  onTradingUpdate: (cb: (snapshot: TradingSnapshot) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, snapshot: TradingSnapshot) => cb(snapshot);
+    ipcRenderer.on('trading:update', listener);
+    return () => ipcRenderer.removeListener('trading:update', listener);
+  },
+
   // Per-CLI-provider BYOK keys — WRITE-ONLY. `providerKeySet` stores a backend key one
   // way (never echoed); `providerKeyHas` returns only a boolean; no method ever returns
   // the plaintext. Keys are materialized MAIN-ONLY at spawn.
