@@ -1662,7 +1662,8 @@
         "llm": "语言模型",
         "risk": "风控限制",
         "agents": "智能体算法模式",
-        "scalping": "剥头皮模式"
+        "scalping": "剥头皮模式",
+        "automation": "自动交易"
       },
       "fields": {
         "mode": "模式",
@@ -1719,7 +1720,19 @@
         "minAtrPct": "最低波动率（ATR）",
         "maxAtrPct": "最高波动率（ATR）",
         "biasRefreshMinutes": "方向刷新间隔",
-        "agentBias": "使用智能体方向过滤器"
+        "agentBias": "使用智能体方向过滤器",
+        "autoStart": "打开应用时自动启动交易台",
+        "keepAwake": "交易时防止电脑休眠",
+        "notify": "桌面通知",
+        "openAtLogin": "登录时打开应用"
+      },
+      "automationIntro": "订单通过币安 API 下达时应用自动执行的事项。只有 Munder Difflin 打开时交易台才会交易。",
+      "autoStartLive": "实盘环境已开启自动启动：每次打开应用都会用真实资金恢复交易。",
+      "automationHints": {
+        "autoStart": "启动约 8 秒后按保存的模式、执行环境和交易对开始。配合设置中的“登录时打开”，重启后也能继续运行。",
+        "keepAwake": "交易台运行时阻止系统挂起应用。电脑休眠时无法移动止损、执行时间止损或开始下一次分析。",
+        "notify": "开仓、平仓、触发每日上限暂停和错误（错误通知每分钟最多一次）。",
+        "openAtLogin": "立即生效（不需要“保存设置”）。与自动启动一起开启，重启后交易台会自动恢复。"
       }
     }
   }

@@ -526,7 +526,8 @@ The Command Center has a **trading** tab that runs the [TradingAgents](https://g
 multi-agent algorithm (analysts → bull/bear debate → research manager → trader → risk debate → portfolio
 manager) on Binance USDⓈ-M perpetuals (BTCUSDT, ETHUSDT), plus a scalping mode whose direction is filtered by an
 agent "bias desk". Paper trading by default; Binance demo and live are opt-in, and a code-enforced risk engine
-sizes every order from its stop. Reports are written in Korean. Guide (Korean): [`docs/TRADING.ko.md`](./docs/TRADING.ko.md).
+sizes every order from its stop. Reports are written in Korean. Guides (Korean): features in
+[`docs/TRADING.ko.md`](./docs/TRADING.ko.md), install-to-live-trading steps in [`docs/TRADING-SETUP.ko.md`](./docs/TRADING-SETUP.ko.md).
 Research tool, not financial advice.
 
 ## Acknowledgements

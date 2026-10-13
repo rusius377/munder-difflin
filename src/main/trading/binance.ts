@@ -17,6 +17,7 @@
  */
 import { createHmac } from 'node:crypto';
 import type { Kline } from './indicators';
+import type { ApiKeyPermissions } from '../../shared/trading';
 
 export interface FetchResponseLike {
   ok: boolean;
@@ -30,7 +31,9 @@ export type FetchLike = (
 
 export const BINANCE_REST = {
   live: 'https://fapi.binance.com',
-  demo: 'https://demo-fapi.binance.com'
+  demo: 'https://demo-fapi.binance.com',
+  /** Spot/wallet host — only used to read a live key's permissions. */
+  spot: 'https://api.binance.com'
 } as const;
 
 export class BinanceError extends Error {
@@ -173,6 +176,8 @@ export interface BinanceClientOptions {
   recvWindow?: number;
   timeoutMs?: number;
   now?: () => number;
+  /** Server-time endpoint on this host (futures: /fapi/v1/time, spot: /api/v3/time). */
+  timePath?: string;
 }
 
 type Params = Record<string, string | number | boolean | undefined>;
@@ -185,6 +190,7 @@ export class BinanceFuturesClient {
   private readonly recvWindow: number;
   private readonly timeoutMs: number;
   private readonly now: () => number;
+  private readonly timePath: string;
   private timeOffset = 0;
   private timeSyncedAt = 0;
 
@@ -196,6 +202,7 @@ export class BinanceFuturesClient {
     this.recvWindow = opts.recvWindow ?? 5000;
     this.timeoutMs = opts.timeoutMs ?? 10_000;
     this.now = opts.now ?? Date.now;
+    this.timePath = opts.timePath ?? '/fapi/v1/time';
   }
 
   get hasCredentials(): boolean {
@@ -268,7 +275,7 @@ export class BinanceFuturesClient {
 
   async syncTime(): Promise<void> {
     const t0 = this.now();
-    const r = await this.publicGet<{ serverTime: number }>('/fapi/v1/time');
+    const r = await this.publicGet<{ serverTime: number }>(this.timePath);
     const t1 = this.now();
     this.timeOffset = num(r.serverTime) - (t0 + t1) / 2;
     this.timeSyncedAt = t1;
@@ -473,4 +480,23 @@ export class BinanceFuturesClient {
       tradeId: x.tradeId !== undefined ? String(x.tradeId) : undefined
     }));
   }
+
+  /** A key's permissions. Call on a client built for BINANCE_REST.spot with timePath '/api/v3/time'. */
+  async apiRestrictions(): Promise<ApiKeyPermissions> {
+    const r = await this.signedRequest<Record<string, unknown>>('GET', '/sapi/v1/account/apiRestrictions');
+    const b = (k: string) => r[k] === true || r[k] === 'true';
+    return {
+      ipRestrict: b('ipRestrict'),
+      enableReading: b('enableReading'),
+      enableFutures: b('enableFutures'),
+      enableWithdrawals: b('enableWithdrawals'),
+      enableInternalTransfer: b('enableInternalTransfer'),
+      permitsUniversalTransfer: b('permitsUniversalTransfer')
+    };
+  }
+}
+
+/** Read a LIVE key's permissions from the spot host. */
+export function liveKeyPermissions(apiKey: string, apiSecret: string, fetchImpl: FetchLike, now?: () => number): Promise<ApiKeyPermissions> {
+  return new BinanceFuturesClient({ baseUrl: BINANCE_REST.spot, apiKey, apiSecret, fetch: fetchImpl, now, timePath: '/api/v3/time' }).apiRestrictions();
 }

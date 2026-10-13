@@ -1662,7 +1662,8 @@
         "llm": "language model",
         "risk": "risk limits",
         "agents": "agent algorithm mode",
-        "scalping": "scalping mode"
+        "scalping": "scalping mode",
+        "automation": "automatic trading"
       },
       "fields": {
         "mode": "mode",
@@ -1719,7 +1720,19 @@
         "minAtrPct": "min volatility (ATR)",
         "maxAtrPct": "max volatility (ATR)",
         "biasRefreshMinutes": "bias refresh",
-        "agentBias": "use the agent bias desk as a direction filter"
+        "agentBias": "use the agent bias desk as a direction filter",
+        "autoStart": "start the desk when the app opens",
+        "keepAwake": "keep the computer awake while trading",
+        "notify": "desktop notifications",
+        "openAtLogin": "open the app when I log in"
+      },
+      "automationIntro": "What the app does on its own once orders run through the Binance API. The desk only trades while Munder Difflin is open.",
+      "autoStartLive": "Auto-start is on for the LIVE venue: every app launch resumes trading real money.",
+      "automationHints": {
+        "autoStart": "Starts with the saved mode, venue and symbols about 8 seconds after launch. Combine with Open at login in Settings to resume after a reboot.",
+        "keepAwake": "Stops the system from suspending the app while the desk runs. A sleeping computer cannot move stops, run time exits or start the next analysis.",
+        "notify": "Entries, exits, daily-limit halts and errors (at most one error notice a minute).",
+        "openAtLogin": "Applies immediately (not part of “save settings”). Together with auto-start, the desk resumes on its own after a reboot."
       }
     }
   }

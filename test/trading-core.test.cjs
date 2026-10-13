@@ -348,3 +348,40 @@ test('normalizeTradingConfig clamps numbers and refuses live without acknowledge
   assert.equal(scalp.scalping.leverage, 5);
   assert.ok(scalp.scalping.emaSlow > scalp.scalping.emaFast);
 });
+
+// ─── automation & live-key safety ────────────────────────────────────────────
+
+test('automation settings default to manual start, keep-awake and notifications on', () => {
+  const d = shared.normalizeTradingConfig({});
+  assert.deepEqual(d.automation, { autoStart: false, keepAwake: true, notify: true });
+  const c = shared.normalizeTradingConfig({ automation: { autoStart: true, keepAwake: 'yes', notify: false } });
+  assert.deepEqual(c.automation, { autoStart: true, keepAwake: true, notify: false });
+});
+
+test('assessLiveKey refuses withdraw-capable or futures-less keys and warns on missing IP allowlist', () => {
+  const base = { ipRestrict: true, enableReading: true, enableFutures: true, enableWithdrawals: false, enableInternalTransfer: false, permitsUniversalTransfer: false };
+  assert.deepEqual(shared.assessLiveKey(base), { ok: true, problems: [], warnings: [] });
+  const w = shared.assessLiveKey({ ...base, enableWithdrawals: true });
+  assert.equal(w.ok, false);
+  assert.match(w.problems[0], /출금/);
+  assert.equal(shared.assessLiveKey({ ...base, enableFutures: false }).ok, false);
+  const ip = shared.assessLiveKey({ ...base, ipRestrict: false });
+  assert.equal(ip.ok, true);
+  assert.match(ip.warnings[0], /IP/);
+});
+
+test('liveKeyPermissions reads /sapi/v1/account/apiRestrictions on the spot host, signed', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    if (url.includes('/api/v3/time')) return { ok: true, status: 200, text: async () => '{"serverTime":1760000000000}' };
+    return { ok: true, status: 200, text: async () => JSON.stringify({ ipRestrict: true, enableReading: true, enableFutures: true, enableWithdrawals: false, enableInternalTransfer: true, permitsUniversalTransfer: false }) };
+  };
+  const p = await bn.liveKeyPermissions('k', 's', fetchImpl, () => 1760000000000);
+  assert.equal(p.enableFutures, true);
+  assert.equal(p.enableInternalTransfer, true);
+  assert.ok(seen.some((u) => u.startsWith('https://api.binance.com/api/v3/time')), 'time synced on the spot host');
+  const call = seen.find((u) => u.includes('/sapi/v1/account/apiRestrictions'));
+  assert.ok(call.startsWith('https://api.binance.com/'));
+  assert.match(call, /signature=[0-9a-f]{64}/);
+});

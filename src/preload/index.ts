@@ -1316,6 +1316,7 @@ const api = {
     ipcRenderer.invoke('trading:closePosition', { symbol }),
   tradingResetPaper: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('trading:resetPaper'),
   tradingOpenReports: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('trading:openReports'),
+  tradingGetLoginItem: (): Promise<boolean> => ipcRenderer.invoke('trading:getLoginItem'),
   tradingTest: (target: 'binance' | 'llm'): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('trading:test', { target }),
   /** Throttled snapshot push from the engine. Returns an unsubscribe. */

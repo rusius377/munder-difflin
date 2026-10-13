@@ -234,3 +234,73 @@ test('engine: manual close books the trade and the daily counters', async () => 
     eng.dispose();
   }
 });
+
+test('engine: notifications fire on entry and exit, and are silenced when turned off', async () => {
+  const dir = tmpDir();
+  const notes = [];
+  const cfg = shared.normalizeTradingConfig({ mode: 'agents', venue: 'paper', symbols: ['BTCUSDT'] });
+  const eng = new TradingEngine(cfg, { fetch: fixtureFetch(), dataDir: dir, getSecret: () => undefined, createLlm: () => mockLlm(), emit: () => {}, notify: (t, b) => notes.push([t, b]) });
+  await eng.start();
+  try {
+    await waitFor(() => eng.getSnapshot().runs[0]?.finishedAt);
+    assert.ok(notes.some(([t]) => /BTCUSDT 롱 진입 \(모의투자\)/.test(t)), JSON.stringify(notes));
+    await eng.closePosition('BTCUSDT');
+    assert.ok(notes.some(([t, b]) => /수동 청산/.test(t) && /손익/.test(b)));
+    const n = notes.length;
+    eng.updateConfig({ ...cfg, automation: { ...cfg.automation, notify: false } });
+    eng.log('테스트 오류', 'error');
+    assert.equal(notes.length, n, 'notify=false silences notifications');
+  } finally {
+    await eng.stop();
+    eng.dispose();
+  }
+});
+
+function liveFetch(perms) {
+  return makeFetch({
+    override: (u) => {
+      const ok = (b) => ({ ok: true, status: 200, text: async () => JSON.stringify(b) });
+      if (u.hostname === 'api.binance.com') {
+        if (u.pathname === '/api/v3/time') return ok({ serverTime: Date.now() });
+        if (u.pathname === '/sapi/v1/account/apiRestrictions') return ok(perms);
+      }
+      if (u.hostname === 'fapi.binance.com') {
+        if (u.pathname === '/fapi/v1/positionSide/dual') return ok({ dualSidePosition: false });
+        if (u.pathname === '/fapi/v1/marginType') return { ok: false, status: 400, text: async () => '{"code":-4046,"msg":"No need to change margin type."}' };
+        if (u.pathname === '/fapi/v3/account') return ok({ totalWalletBalance: '1000', totalUnrealizedProfit: '0', totalMarginBalance: '1000', availableBalance: '1000' });
+        if (u.pathname === '/fapi/v3/positionRisk') return ok([]);
+      }
+      return null;
+    }
+  });
+}
+
+const PERMS_OK = { ipRestrict: true, enableReading: true, enableFutures: true, enableWithdrawals: false, enableInternalTransfer: false, permitsUniversalTransfer: false };
+
+test('engine (live): a withdraw-capable key is refused before any order path starts', async () => {
+  const dir = tmpDir();
+  const keys = { 'binance.live.key': 'k', 'binance.live.secret': 's' };
+  const cfg = shared.normalizeTradingConfig({ venue: 'live', liveAcknowledged: true, symbols: ['BTCUSDT'] });
+  const eng = new TradingEngine(cfg, { fetch: liveFetch({ ...PERMS_OK, enableWithdrawals: true }), dataDir: dir, getSecret: (k) => keys[k], createLlm: () => mockLlm(), emit: () => {} });
+  await assert.rejects(eng.start(), /출금 권한/);
+  assert.equal(eng.getSnapshot().status, 'error');
+  eng.dispose();
+});
+
+test('engine (live): a futures-only key with an IP allowlist starts and reports the live account', async () => {
+  const dir = tmpDir();
+  const keys = { 'binance.live.key': 'k', 'binance.live.secret': 's' };
+  const cfg = shared.normalizeTradingConfig({ venue: 'live', liveAcknowledged: true, symbols: ['BTCUSDT'], mode: 'scalping', scalping: { pollSeconds: 60, agentBias: false } });
+  const eng = new TradingEngine(cfg, { fetch: liveFetch(PERMS_OK), dataDir: dir, getSecret: (k) => keys[k], createLlm: () => mockLlm(), emit: () => {} });
+  await eng.start();
+  try {
+    await waitFor(() => eng.getSnapshot().account);
+    const s = eng.getSnapshot();
+    assert.equal(s.account.venue, 'live');
+    assert.equal(s.account.equity, 1000);
+    assert.ok(s.logs.some((l) => /키 권한 확인/.test(l.message)));
+  } finally {
+    await eng.stop();
+    eng.dispose();
+  }
+});

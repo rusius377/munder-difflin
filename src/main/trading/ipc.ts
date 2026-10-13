@@ -10,8 +10,11 @@
  *   trading:start / stop / runNow / closePosition / resetPaper / snapshot / test
  *   trading:openReports                opens the reports folder
  *   'trading:update' (event)           throttled TradingSnapshot push
+ *
+ * Automation (config.automation): auto-start on launch, a power-save blocker
+ * while the desk runs, and desktop notifications for entries/exits/halts/errors.
  */
-import { app, ipcMain, shell } from 'electron';
+import { app, ipcMain, Notification, powerSaveBlocker, shell } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { runHiddenClaude } from '../hiddenClaude';
@@ -20,9 +23,9 @@ import { projectDir } from '../transcript';
 import { deleteSecret, getSecret, hasSecret, setSecret } from '../integrations';
 import { TradingEngine } from './engine';
 import { createLlmClient } from './llm';
-import { BinanceFuturesClient, BINANCE_REST, type FetchLike } from './binance';
+import { BinanceFuturesClient, BINANCE_REST, liveKeyPermissions, type FetchLike } from './binance';
 import {
-  normalizeTradingConfig, TRADING_SECRET_KEYS, TRADING_SYMBOLS,
+  assessLiveKey, normalizeTradingConfig, TRADING_SECRET_KEYS, TRADING_SYMBOLS, type EngineStatus,
   type TradingConfig, type TradingSecretKey, type TradingSecretPresence, type TradingSymbol
 } from '../../shared/trading';
 
@@ -62,7 +65,23 @@ function errMsg(e: unknown): string {
 
 export function registerTradingIpc(opts: { broadcast: (channel: string, payload: unknown) => void }): { dispose: () => void } {
   const fetchImpl = (globalThis as unknown as { fetch: FetchLike }).fetch;
-  const engine = new TradingEngine(loadConfig(), {
+
+  // Keep the machine from suspending the app while the desk trades: a sleeping
+  // laptop misses exits the exchange cannot handle for it (time stops, the
+  // scalper's break-even move, the next agent run).
+  let blockerId: number | null = null;
+  const syncKeepAwake = (status: EngineStatus) => {
+    const want = engine.config.automation.keepAwake && (status === 'running' || status === 'halted' || status === 'starting');
+    try {
+      if (want && blockerId === null) blockerId = powerSaveBlocker.start('prevent-app-suspension');
+      if (!want && blockerId !== null) {
+        if (powerSaveBlocker.isStarted(blockerId)) powerSaveBlocker.stop(blockerId);
+        blockerId = null;
+      }
+    } catch { /* best-effort */ }
+  };
+
+  const engine: TradingEngine = new TradingEngine(loadConfig(), {
     fetch: fetchImpl,
     dataDir: dataDir(),
     getSecret: readSecret,
@@ -75,7 +94,24 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
       prepareCwd: (cwd) => ensureClaudePermissionsAccepted(cwd),
       transcriptDirFor: (cwd) => projectDir(cwd)
     }),
-    emit: (snapshot) => opts.broadcast('trading:update', snapshot)
+    emit: (snapshot) => {
+      syncKeepAwake(snapshot.status);
+      opts.broadcast('trading:update', snapshot);
+    },
+    notify: (title, body) => {
+      try { if (Notification.isSupported()) new Notification({ title, body, silent: false }).show(); } catch { /* best-effort */ }
+    }
+  });
+
+  // Auto-start: once the app is up (and the user's shell PATH / Claude login are
+  // resolvable), start the desk with the saved settings. Live needs the saved
+  // acknowledgement, which normalizeTradingConfig already enforces.
+  void app.whenReady().then(() => {
+    setTimeout(() => {
+      if (!engine.config.automation.autoStart || engine.running) return;
+      engine.log('앱 시작 시 자동 실행 설정에 따라 트레이딩 데스크를 시작합니다');
+      engine.start().catch(() => { /* logged + notified by the engine */ });
+    }, 8000);
   });
 
   ipcMain.handle('trading:getConfig', () => engine.config);
@@ -140,6 +176,11 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
     try { engine.resetPaper(); return { ok: true }; } catch (e) { return { ok: false, error: errMsg(e) }; }
   });
 
+  /** Whether the OS launches the app at login (the onboarding sets it; the desk's automation section shows it again). */
+  ipcMain.handle('trading:getLoginItem', () => {
+    try { return app.getLoginItemSettings().openAtLogin; } catch { return false; }
+  });
+
   ipcMain.handle('trading:openReports', async () => {
     const dir = path.join(dataDir(), 'reports');
     mkdirSync(dir, { recursive: true });
@@ -173,6 +214,15 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
         const acct = await priv.account();
         const hedge = await priv.isHedgeMode();
         lines.push(`${cfg.venue === 'live' ? '실거래' : '데모'} 계좌 OK — 지갑 ${acct.totalWalletBalance.toFixed(2)} USDT, 가용 ${acct.availableBalance.toFixed(2)} USDT, ${hedge ? '헤지 모드' : '단방향 모드'}`);
+        if (cfg.venue === 'live') {
+          try {
+            const verdict = assessLiveKey(await liveKeyPermissions(key, secret, fetchImpl));
+            if (!verdict.ok) return { ok: false, message: [...lines, ...verdict.problems].join(' · ') };
+            lines.push('키 권한 OK (선물 거래 가능 · 출금 불가)', ...verdict.warnings);
+          } catch (e) {
+            lines.push(`키 권한 확인 실패: ${errMsg(e)}`);
+          }
+        }
       }
       return { ok: true, message: lines.join(' · ') };
     } catch (e) {
@@ -180,5 +230,10 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
     }
   });
 
-  return { dispose: () => engine.dispose() };
+  return {
+    dispose: () => {
+      engine.dispose();
+      syncKeepAwake('stopped');
+    }
+  };
 }

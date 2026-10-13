@@ -4,7 +4,7 @@ import { PixelButton } from '../PixelButton';
 import { card, hint, input, mono, sectionHead } from './tradingUi';
 import {
   ANALYST_KEYS, DEFAULT_LLM_MODELS, EXECUTION_VENUES, LLM_PROVIDERS, TRADING_MODES, TRADING_SYMBOLS,
-  type AgentModeSettings, type LlmProvider, type RiskSettings, type ScalpingSettings,
+  type AgentModeSettings, type AutomationSettings, type LlmProvider, type RiskSettings, type ScalpingSettings,
   type TradingConfig, type TradingSecretKey, type TradingSecretPresence
 } from '@shared/trading';
 
@@ -95,6 +95,12 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
   const [test, setTest] = useState<{ target: string; ok: boolean; message: string } | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [resetMsg, setResetMsg] = useState<string | null>(null);
+  const [loginItem, setLoginItem] = useState<boolean | null>(null);
+  useEffect(() => { window.cth.tradingGetLoginItem().then(setLoginItem).catch(() => setLoginItem(null)); }, []);
+  const toggleLoginItem = async (v: boolean) => {
+    setLoginItem(v);
+    try { setLoginItem(await window.cth.setLoginItem(v)); } catch { setLoginItem(!v); }
+  };
 
   useEffect(() => { if (cfg) setD(structuredClone(cfg)); }, [cfg]);
   const loadSecrets = useCallback(() => { window.cth.tradingSecrets().then(setSecrets).catch(() => undefined); }, []);
@@ -106,6 +112,7 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
   const setRisk = (patch: Partial<RiskSettings>) => setD({ ...d, risk: { ...d.risk, ...patch } });
   const setAgents = (patch: Partial<AgentModeSettings>) => setD({ ...d, agents: { ...d.agents, ...patch } });
   const setScalp = (patch: Partial<ScalpingSettings>) => setD({ ...d, scalping: { ...d.scalping, ...patch } });
+  const setAuto = (patch: Partial<AutomationSettings>) => setD({ ...d, automation: { ...d.automation, ...patch } });
   const f = (k: string) => t(`trading.settings.fields.${k}`);
 
   const save = async () => {
@@ -173,6 +180,30 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
               {t('trading.live.ack')}
             </label>
           </div>
+        )}
+      </Section>
+
+      <Section title={t('trading.settings.sections.automation')} intro={t('trading.settings.automationIntro')}>
+        {(['autoStart', 'keepAwake', 'notify'] as const).map((k) => (
+          <label key={k} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={d.automation[k]} onChange={(e) => setAuto({ [k]: e.target.checked })} style={{ marginTop: 2 }} />
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)' }}>{f(k)}</span>
+              <span style={hint}>{t(`trading.settings.automationHints.${k}`)}</span>
+            </span>
+          </label>
+        ))}
+        {loginItem !== null && (
+          <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={loginItem} onChange={(e) => { void toggleLoginItem(e.target.checked); }} style={{ marginTop: 2 }} />
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)' }}>{f('openAtLogin')}</span>
+              <span style={hint}>{t('trading.settings.automationHints.openAtLogin')}</span>
+            </span>
+          </label>
+        )}
+        {d.automation.autoStart && d.venue === 'live' && (
+          <div style={{ ...hint, color: 'var(--cth-status-blocked)', fontWeight: 700 }}>{t('trading.settings.autoStartLive')}</div>
         )}
       </Section>
 

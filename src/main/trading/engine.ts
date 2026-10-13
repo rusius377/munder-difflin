@@ -15,7 +15,7 @@
  * The engine is constructed with injected I/O (fetch, LLM, clock, data dir),
  * so it runs in tests without Electron.
  */
-import { BinanceFuturesClient, BINANCE_REST, type FetchLike } from './binance';
+import { BinanceFuturesClient, BINANCE_REST, liveKeyPermissions, type FetchLike } from './binance';
 import { BinanceBroker, PaperBroker, type Broker, type PriceTick } from './broker';
 import { MarketData, formatTechnicalBlock, summarizeTimeframe } from './marketData';
 import { runPipeline, renderReport, PipelineAborted } from './agents';
@@ -27,7 +27,7 @@ import { Journal, type DayState } from './journal';
 import { fmtPrice } from './indicators';
 import type { LlmClient } from './llm';
 import {
-  AGENT_PIPELINE, dayKeyOf, emptySnapshot, normalizeTradingConfig,
+  AGENT_PIPELINE, assessLiveKey, dayKeyOf, emptySnapshot, normalizeTradingConfig,
   type AgentRunView, type AgentStepView, type ExecutionVenue, type FinalDecision, type OrderPlan,
   type PositionView, type RiskVerdict, type TradeView, type TradingConfig, type TradingSecretKey,
   type TradingSnapshot, type TradingSymbol, type LogLine
@@ -39,6 +39,8 @@ export interface EngineDeps {
   getSecret: (key: TradingSecretKey) => string | undefined;
   createLlm: (cfg: TradingConfig, sessionRoot: string) => LlmClient;
   emit: (snapshot: TradingSnapshot) => void;
+  /** Desktop notification (entries, exits, halts, errors). Gated by automation.notify. */
+  notify?: (title: string, body: string) => void;
   now?: () => number;
 }
 
@@ -78,6 +80,7 @@ export class TradingEngine {
   private entryTimes: Partial<Record<TradingSymbol, number[]>> = {};
   /** Decision that opened an agents-mode position, for reflection when it closes. */
   private openDecision: Partial<Record<TradingSymbol, { runId: string; summary: string }>> = {};
+  private lastErrorNotice = 0;
 
   constructor(cfg: TradingConfig, private readonly deps: EngineDeps) {
     this.cfg = normalizeTradingConfig(cfg);
@@ -113,7 +116,40 @@ export class TradingEngine {
   log(message: string, level: LogLine['level'] = 'info', symbol?: TradingSymbol): void {
     this.snap.logs.push({ ts: this.now(), level, symbol, message });
     if (this.snap.logs.length > MAX_LOGS) this.snap.logs.splice(0, this.snap.logs.length - MAX_LOGS);
+    // Errors reach the desktop too (at most one a minute, so an outage is not a flood).
+    if (level === 'error' && this.now() - this.lastErrorNotice > 60_000) {
+      this.lastErrorNotice = this.now();
+      this.notify('트레이딩 데스크 오류', message);
+    }
     this.emitSoon();
+  }
+
+  private notify(title: string, body: string): void {
+    if (!this.cfg.automation.notify) return;
+    try { this.deps.notify?.(title, body.slice(0, 240)); } catch { /* notifications are best-effort */ }
+  }
+
+  /**
+   * Live venue only: read the key's permissions from Binance and refuse to
+   * trade with a key that can withdraw or cannot trade futures. If the check
+   * itself cannot run, trading continues with a warning (the futures API will
+   * refuse an unauthorised key on its own).
+   */
+  private async checkLiveKey(): Promise<void> {
+    const key = this.deps.getSecret('binance.live.key');
+    const secret = this.deps.getSecret('binance.live.secret');
+    if (!key || !secret) return;
+    let perms;
+    try {
+      perms = await liveKeyPermissions(key, secret, this.deps.fetch, this.deps.now);
+    } catch (e) {
+      this.log(`API 키 권한을 확인하지 못했습니다 (계속 진행): ${e instanceof Error ? e.message : e}`, 'warn');
+      return;
+    }
+    const verdict = assessLiveKey(perms);
+    for (const w of verdict.warnings) this.log(w, 'warn');
+    if (!verdict.ok) throw new Error(verdict.problems.join(' / '));
+    this.log('실거래 API 키 권한 확인: 선물 거래 가능, 출금 권한 없음');
   }
 
   private emitSoon(): void {
@@ -209,6 +245,7 @@ export class TradingEngine {
     this.setStatus('starting', `${VENUE_KO[this.cfg.venue]} 연결 중…`);
     try {
       const broker = this.makeBroker();
+      if (this.cfg.venue === 'live') await this.checkLiveKey();
       await broker.init(this.cfg.symbols);
       this.broker = broker;
       this.llm = null;
@@ -279,6 +316,8 @@ export class TradingEngine {
     this.safeJournal({ type: 'trade', trade: t });
     const sign = t.pnl >= 0 ? '+' : '';
     this.log(`${t.symbol} ${t.side === 'LONG' ? '롱' : '숏'} 종료(${t.exitReason}) ${fmtPrice(t.entryPrice)} → ${fmtPrice(t.exitPrice)} · 손익 ${sign}${t.pnl.toFixed(2)} USDT`, 'trade', t.symbol);
+    this.notify(`${t.symbol} ${t.exitReason} (${VENUE_KO[this.cfg.venue]})`,
+      `${t.side === 'LONG' ? '롱' : '숏'} ${fmtPrice(t.entryPrice)} → ${fmtPrice(t.exitPrice)} · 손익 ${sign}${t.pnl.toFixed(2)} USDT`);
     if (t.source === 'agents' && this.cfg.agents.reflect) void this.reflect(t);
   }
 
@@ -350,6 +389,7 @@ export class TradingEngine {
       if (halted && this.snap.status === 'running') {
         this.setStatus('halted', halted);
         this.log(`신규 진입 중단: ${halted} (포지션 관리는 계속)`, 'warn');
+        this.notify('신규 진입 중단', `${halted} — 오늘은 새 포지션을 열지 않습니다`);
       } else if (!halted && this.snap.status === 'halted') {
         this.setStatus('running');
       }
@@ -399,6 +439,8 @@ export class TradingEngine {
       times.push(this.now());
       this.entryTimes[plan.symbol] = times.filter((t) => this.now() - t < 3_600_000);
       this.log(`${plan.symbol} ${plan.side === 'LONG' ? '롱' : '숏'} 진입 ${pos.quantity} @ ${fmtPrice(pos.entryPrice)} · 손절 ${fmtPrice(pos.stopLoss)} · 익절 ${fmtPrice(pos.takeProfit)} · ${plan.leverage}배`, 'trade', plan.symbol);
+      this.notify(`${plan.symbol} ${plan.side === 'LONG' ? '롱' : '숏'} 진입 (${VENUE_KO[this.cfg.venue]})`,
+        `${pos.quantity} @ ${fmtPrice(pos.entryPrice)} · 손절 ${fmtPrice(pos.stopLoss)} · 익절 ${fmtPrice(pos.takeProfit)} · ${plan.leverage}배`);
       this.safeJournal({ type: 'entry', source, plan, fill: pos });
       await this.refreshAccount();
       return pos;

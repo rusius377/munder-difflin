@@ -142,6 +142,16 @@ export interface ScalpingSettings {
   biasRefreshMinutes: number;
 }
 
+/** Hands-off operation: what the app does on its own around the desk. */
+export interface AutomationSettings {
+  /** Start the desk automatically when the app launches (with the saved mode/venue). */
+  autoStart: boolean;
+  /** Keep the computer from suspending the app while the desk runs. */
+  keepAwake: boolean;
+  /** Desktop notifications for entries, exits, halts and errors. */
+  notify: boolean;
+}
+
 export interface TradingConfig {
   version: 1;
   mode: TradingMode;
@@ -153,6 +163,7 @@ export interface TradingConfig {
   risk: RiskSettings;
   agents: AgentModeSettings;
   scalping: ScalpingSettings;
+  automation: AutomationSettings;
 }
 
 export const DEFAULT_NEWS_FEEDS: readonly string[] = [
@@ -229,6 +240,11 @@ export function defaultTradingConfig(): TradingConfig {
       maxAtrPct: 1.2,
       agentBias: true,
       biasRefreshMinutes: 15
+    },
+    automation: {
+      autoStart: false,
+      keepAwake: true,
+      notify: true
     }
   };
 }
@@ -276,6 +292,8 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
   const risk = obj(i.risk);
   const ag = obj(i.agents);
   const sc = obj(i.scalping);
+  const au = obj(i.automation);
+  const bool = (v: unknown, fb: boolean) => (typeof v === 'boolean' ? v : fb);
 
   const symbols = Array.isArray(i.symbols)
     ? TRADING_SYMBOLS.filter((s) => (i.symbols as unknown[]).includes(s))
@@ -372,7 +390,12 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
       newsFeeds: feeds,
       reflect: typeof ag.reflect === 'boolean' ? ag.reflect : d.agents.reflect
     },
-    scalping
+    scalping,
+    automation: {
+      autoStart: bool(au.autoStart, d.automation.autoStart),
+      keepAwake: bool(au.keepAwake, d.automation.keepAwake),
+      notify: bool(au.notify, d.automation.notify)
+    }
   };
 }
 
@@ -602,6 +625,32 @@ export const TRADING_SECRET_KEYS: readonly TradingSecretKey[] = [
 ];
 
 export type TradingSecretPresence = Record<TradingSecretKey, boolean>;
+
+/** What Binance says a key may do (GET /sapi/v1/account/apiRestrictions). */
+export interface ApiKeyPermissions {
+  ipRestrict: boolean;
+  enableReading: boolean;
+  enableFutures: boolean;
+  enableWithdrawals: boolean;
+  enableInternalTransfer: boolean;
+  permitsUniversalTransfer: boolean;
+}
+
+/**
+ * Can this key run the live desk? Refuses keys that cannot trade futures and
+ * keys that can WITHDRAW — a trading bot never needs that, and a leaked key
+ * with it can empty the account. A missing IP allowlist is a warning only.
+ * Messages are Korean (they reach the user verbatim).
+ */
+export function assessLiveKey(p: ApiKeyPermissions): { ok: boolean; problems: string[]; warnings: string[] } {
+  const problems: string[] = [];
+  const warnings: string[] = [];
+  if (!p.enableFutures) problems.push('이 API 키에 선물 거래 권한(Enable Futures)이 없습니다');
+  if (p.enableWithdrawals) problems.push('이 API 키에 출금 권한(Enable Withdrawals)이 켜져 있습니다 — 자동매매 키는 출금 권한을 꺼야 합니다');
+  if (p.enableInternalTransfer || p.permitsUniversalTransfer) warnings.push('내부 이체/유니버설 이체 권한이 켜져 있습니다 — 필요 없다면 끄는 것을 권장합니다');
+  if (!p.ipRestrict) warnings.push('IP 접근 제한이 없습니다 — 바이낸스 API 관리에서 내 IP만 허용하도록 설정하는 것을 권장합니다');
+  return { ok: problems.length === 0, problems, warnings };
+}
 
 /** UTC day key. */
 export function dayKeyOf(ts: number): string {
