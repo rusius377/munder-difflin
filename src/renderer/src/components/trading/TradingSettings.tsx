@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { PixelButton } from '../PixelButton';
 import { card, hint, input, mono, sectionHead } from './tradingUi';
 import {
-  ANALYST_KEYS, DEFAULT_LLM_MODELS, EXECUTION_VENUES, LLM_PROVIDERS, TRADING_MODES, TRADING_SYMBOLS,
+  ANALYST_KEYS, CONSENSUS_RULES, DEFAULT_LLM_MODELS, EXECUTION_VENUES, LLM_PROVIDERS, TEAM_LIMITS, TEAM_PRESETS, TRADING_MODES, TRADING_SYMBOLS,
+  estimateLlmCalls, normalizeTradingConfig, teamPresetOf,
   type AgentModeSettings, type AutomationSettings, type LlmProvider, type RiskSettings, type ScalpingSettings,
-  type TradingConfig, type TradingSecretKey, type TradingSecretPresence
+  type TeamPreset, type TeamSettings, type TradingConfig, type TradingSecretKey, type TradingSecretPresence
 } from '@shared/trading';
 
 /**
@@ -113,6 +114,7 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
   const setAgents = (patch: Partial<AgentModeSettings>) => setD({ ...d, agents: { ...d.agents, ...patch } });
   const setScalp = (patch: Partial<ScalpingSettings>) => setD({ ...d, scalping: { ...d.scalping, ...patch } });
   const setAuto = (patch: Partial<AutomationSettings>) => setD({ ...d, automation: { ...d.automation, ...patch } });
+  const setTeams = (patch: Partial<TeamSettings>) => setD({ ...d, teams: { ...d.teams, ...patch } });
   const f = (k: string) => t(`trading.settings.fields.${k}`);
 
   const save = async () => {
@@ -143,6 +145,10 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
   const setProvider = (p: LlmProvider) => setD({ ...d, llm: { ...d.llm, provider: p, quickModel: DEFAULT_LLM_MODELS[p].quick, deepModel: DEFAULT_LLM_MODELS[p].deep } });
   const toggle = <T extends string>(list: T[], v: T): T[] => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const dirty = JSON.stringify(d) !== JSON.stringify(cfg);
+  // Shown on the clamped values, exactly what saving would keep.
+  const est = estimateLlmCalls(normalizeTradingConfig(d));
+  const preset = teamPresetOf(d.teams);
+  const TEAM_FIELDS = ['analystsPerRole', 'researchersPerSide', 'traders', 'riskPerStance', 'portfolioCommittee', 'biasPanel'] as const;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -310,6 +316,33 @@ export function TradingSettings({ cfg, running, onSaved }: { cfg: TradingConfig 
             onChange={(e) => setAgents({ newsFeeds: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })}
             style={{ ...input, resize: 'vertical' }} />
         </label>
+      </Section>
+
+      <Section title={t('trading.settings.sections.teams')} intro={t('trading.settings.teamsIntro')}>
+        <div style={row}>
+          <span style={hint}>{f('teamPreset')}</span>
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Seg value={(preset ?? '') as TeamPreset} options={Object.keys(TEAM_PRESETS) as TeamPreset[]} label={(p) => t(`trading.teamPresets.${p}`)}
+              onChange={(p) => setTeams({ ...TEAM_PRESETS[p] })} />
+            {!preset && <span style={mono}>{t('trading.teamPresets.custom')}</span>}
+          </span>
+        </div>
+        <div style={grid}>
+          {TEAM_FIELDS.map((k) => (
+            <Num key={k} label={`${f(k)} (1–${TEAM_LIMITS[k]})`} value={d.teams[k]} suffix={t('trading.units.people')} onChange={(v) => setTeams({ [k]: v })} />
+          ))}
+          <Num label={`${f('maxParallel')} (1–${TEAM_LIMITS.maxParallel})`} value={d.teams.maxParallel} onChange={(v) => setTeams({ maxParallel: v })} />
+        </div>
+        <div style={row}>
+          <span style={hint}>{f('consensus')}</span>
+          <Seg value={d.teams.consensus} options={CONSENSUS_RULES} label={(r) => t(`trading.consensus.${r}`)} onChange={(consensus) => setTeams({ consensus })} />
+        </div>
+        <p style={hint}>{t(`trading.consensusHints.${d.teams.consensus}`)}</p>
+        <p style={hint}>{t('trading.settings.teamsHow')}</p>
+        <div style={{ ...mono, color: 'var(--cth-ink-900)' }}>
+          {t('trading.settings.teamEstimate', { pipeline: est.pipeline, pipelinePerHour: est.pipelinePerHour, bias: est.bias, biasPerHour: est.biasPerHour })}
+        </div>
+        {d.llm.provider === 'claude-subscription' && <p style={hint}>{t('trading.settings.teamSubscriptionNote')}</p>}
       </Section>
 
       <Section title={t('trading.settings.sections.scalping')} intro={t('trading.settings.scalpingIntro')}>

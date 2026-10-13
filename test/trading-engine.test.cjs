@@ -36,7 +36,8 @@ function mockLlm(opts = {}) {
     label: 'mock',
     async complete(call) {
       calls.push(call);
-      const role = call.role.split('-')[0];
+      // "trader_2-BTCUSDT" → "trader": staffed seats and team leads answer like their role.
+      const role = call.role.split('-')[0].replace(/_(\d+|lead)$/, '');
       if (opts.fail && opts.fail(role)) throw new Error(`mock failure for ${role}`);
       switch (role) {
         case 'researchManager': return '**Rating**: Overweight\n\n**근거**: 강세 측이 우세.\n\n**전략적 실행 방안**: 소규모 롱.';
@@ -152,7 +153,11 @@ test('engine (paper, agents mode): pipeline decision opens a protected paper pos
     assert.ok(fs.existsSync(run.reportPath), 'report written');
     const report = fs.readFileSync(run.reportPath, 'utf8');
     assert.match(report, /트레이딩 에이전트 보고서/);
-    assert.match(report, /포트폴리오 매니저 최종 결정/);
+    // Default teams: a 3-seat portfolio committee voted (all LONG → unanimous, full size).
+    assert.match(report, /포트폴리오 위원회 결정/);
+    assert.match(report, /팀 구성: 분석가 역할당 2명/);
+    assert.equal(run.committee.outcome, 'LONG');
+    assert.equal(run.committee.agree, 3);
     const journal = fs.readFileSync(path.join(dir, 'journal.jsonl'), 'utf8');
     assert.match(journal, /"type":"decision"/);
     assert.match(journal, /"type":"entry"/);

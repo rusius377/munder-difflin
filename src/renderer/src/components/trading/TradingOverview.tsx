@@ -155,6 +155,11 @@ export function TradingOverview({ snap, cfg }: { snap: TradingSnapshot | null; c
                   <>
                     <span>{t('trading.overview.lastDecision')}: <b>{lastRun.decision.rating}</b> / {t(`trading.actionNames.${lastRun.decision.action}`)}</span>
                     <span>{t('trading.overview.confidence')} {(lastRun.decision.confidence * 100).toFixed(0)}%</span>
+                    {lastRun.committee && (
+                      <span>{lastRun.committee.reached
+                        ? t('trading.overview.committeeAgree', { agree: lastRun.committee.agree, responded: lastRun.committee.responded })
+                        : t('trading.overview.committeeMissed')}</span>
+                    )}
                     <span>{fmtTime(lastRun.finishedAt)}</span>
                   </>
                 ) : (

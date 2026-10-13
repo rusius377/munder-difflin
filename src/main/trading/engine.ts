@@ -21,14 +21,15 @@ import { MarketData, formatTechnicalBlock, summarizeTimeframe } from './marketDa
 import { runPipeline, renderReport, PipelineAborted } from './agents';
 import { biasDeskPrompt, reflectionPrompt, type DeskConstraints } from './prompts';
 import { parseBias } from './decision';
+import { aggregateBias, biasPanelClosing, committeeMinutes, memberRule, personaKey, withMember } from './teams';
 import { planFromDecision, sizeOrder, type RiskContext } from './risk';
 import { evaluateScalp, manageScalp, biasKo } from './scalper';
 import { Journal, type DayState } from './journal';
 import { fmtPrice } from './indicators';
-import type { LlmClient } from './llm';
+import { limitConcurrency, type LlmClient } from './llm';
 import {
-  AGENT_PIPELINE, assessLiveKey, dayKeyOf, emptySnapshot, normalizeTradingConfig,
-  type AgentRunView, type AgentStepView, type ExecutionVenue, type FinalDecision, type OrderPlan,
+  assessLiveKey, biasSkeleton, dayKeyOf, emptySnapshot, normalizeTradingConfig, pipelineSkeleton, stepId, stepKey,
+  type AgentRunView, type AgentStepView, type BiasDirection, type ExecutionVenue, type FinalDecision, type OrderPlan,
   type PositionView, type RiskVerdict, type TradeView, type TradingConfig, type TradingSecretKey,
   type TradingSnapshot, type TradingSymbol, type LogLine
 } from '../../shared/trading';
@@ -199,8 +200,9 @@ export class TradingEngine {
     return { restartRequired: this.running && structural };
   }
 
+  /** One client per config, shared by every run, so `teams.maxParallel` caps the whole desk. */
   private getLlm(): LlmClient {
-    if (!this.llm) this.llm = this.deps.createLlm(this.cfg, this.journal.sessionRoot);
+    if (!this.llm) this.llm = limitConcurrency(this.deps.createLlm(this.cfg, this.journal.sessionRoot), this.cfg.teams.maxParallel);
     return this.llm;
   }
 
@@ -548,10 +550,9 @@ export class TradingEngine {
 
   private newRun(symbol: TradingSymbol, kind: AgentRunView['kind']): AgentRunView {
     const id = `${this.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
-    const roles = kind === 'pipeline' ? AGENT_PIPELINE : (['biasDesk'] as const);
     const run: AgentRunView = {
       id, symbol, kind, startedAt: this.now(),
-      steps: roles.map((role) => ({ role, state: 'pending' as const }))
+      steps: kind === 'pipeline' ? pipelineSkeleton(this.cfg.agents.analysts, this.cfg.teams) : biasSkeleton(this.cfg.teams)
     };
     this.snap.runs.unshift(run);
     if (this.snap.runs.length > MAX_RUNS) this.snap.runs.length = MAX_RUNS;
@@ -560,7 +561,8 @@ export class TradingEngine {
   }
 
   private setStep(run: AgentRunView, step: AgentStepView): void {
-    const i = run.steps.findIndex((s) => s.role === step.role);
+    const key = stepKey(step);
+    const i = run.steps.findIndex((s) => stepKey(s) === key);
     if (i >= 0) run.steps[i] = { ...run.steps[i], ...step };
     else run.steps.push(step);
     this.emitSoon();
@@ -580,7 +582,8 @@ export class TradingEngine {
         ctx,
         analysts: this.cfg.agents.analysts,
         debateRounds: this.cfg.agents.debateRounds,
-        riskRounds: this.cfg.agents.riskRounds
+        riskRounds: this.cfg.agents.riskRounds,
+        teams: this.cfg.teams
       }, {
         llm,
         onStep: (s) => this.setStep(run, s),
@@ -588,7 +591,13 @@ export class TradingEngine {
         now: this.deps.now
       });
       run.decision = result.decision;
-      if (!result.parsedJson) this.log(`${symbol} 포트폴리오 매니저 JSON을 읽지 못해 등급(${result.decision.rating})만으로 판단합니다`, 'warn', symbol);
+      run.committee = result.committee;
+      if (result.committee) this.log(`${symbol} 포트폴리오 위원회: ${result.committee.note}`, 'info', symbol);
+      if (!result.parsedJson) {
+        this.log(result.committee
+          ? `${symbol} 일부 위원의 JSON을 읽지 못해 그 위원은 등급만으로 투표했습니다`
+          : `${symbol} 포트폴리오 매니저 JSON을 읽지 못해 등급(${result.decision.rating})만으로 판단합니다`, 'warn', symbol);
+      }
 
       // ── risk engine + execution ─────────────────────────────────────
       // The desk may have been stopped while the managers were thinking.
@@ -614,7 +623,7 @@ export class TradingEngine {
       } catch (e) {
         this.log(`보고서 저장 실패: ${e instanceof Error ? e.message : e}`, 'warn', symbol);
       }
-      this.safeJournal({ type: 'decision', symbol, runId: run.id, execute, decision: result.decision, verdict, report: run.reportPath });
+      this.safeJournal({ type: 'decision', symbol, runId: run.id, execute, decision: result.decision, committee: result.committee, verdict, report: run.reportPath });
       this.log(`${symbol} 최종 결정: ${result.decision.rating} / ${result.decision.action} (확신도 ${(result.decision.confidence * 100).toFixed(0)}%) — ${verdictText}`, 'info', symbol);
     } catch (e) {
       const msg = e instanceof PipelineAborted ? '정지로 중단됨' : e instanceof Error ? e.message : String(e);
@@ -793,7 +802,9 @@ export class TradingEngine {
     if (this.biasBusy.has(symbol)) return;
     this.biasBusy.add(symbol);
     const run = this.newRun(symbol, 'bias');
-    this.setStep(run, { role: 'biasDesk', state: 'running', startedAt: this.now() });
+    const n = this.cfg.teams.biasPanel;
+    const rule = this.cfg.teams.consensus;
+    this.setStep(run, { role: 'biasDesk', id: 'biasDesk', state: n > 1 ? 'pending' : 'running', startedAt: n > 1 ? undefined : this.now() });
     try {
       const p = this.cfg.scalping;
       const [snapshot, k, trend] = await Promise.all([
@@ -803,17 +814,48 @@ export class TradingEngine {
       ]);
       const scalpTech = formatTechnicalBlock(symbol, [summarizeTimeframe(p.timeframe, k), summarizeTimeframe(p.trendTimeframe, trend)], k.slice(-10), p.timeframe);
       const prompt = biasDeskPrompt(symbol, `${scalpTech}\n\n${snapshot.technical}`, snapshot.derivatives, snapshot.sentiment);
-      const text = await this.getLlm().complete({ role: `biasDesk-${symbol}`, tier: 'quick', system: prompt.system, prompt: prompt.prompt, maxTokens: 900 });
-      const parsed = parseBias(text);
-      if (!parsed) throw new Error('방향 필터 JSON을 읽지 못했습니다');
+      const llm = this.getLlm();
+      let parsed: { bias: BiasDirection; confidence: number; note: string };
+      let content: string;
+      if (n === 1) {
+        const text = await llm.complete({ role: `biasDesk-${symbol}`, tier: 'quick', system: prompt.system, prompt: prompt.prompt, maxTokens: 900 });
+        const one = parseBias(text);
+        if (!one) throw new Error('방향 필터 JSON을 읽지 못했습니다');
+        parsed = one;
+        content = text.trim();
+      } else {
+        // The panel: n judges with different specialties vote independently; code tallies.
+        const seats = await Promise.all(Array.from({ length: n }, (_, i) => i + 1).map(async (member) => {
+          const persona = personaKey('biasDesk', member);
+          const id = stepId('biasDesk', member);
+          this.setStep(run, { role: 'biasDesk', id, member, persona, state: 'running', startedAt: this.now() });
+          try {
+            const mp = withMember(prompt, memberRule('biasDesk', member, n, biasPanelClosing(rule)));
+            const text = await llm.complete({ role: `biasDesk_${member}-${symbol}`, tier: 'quick', system: mp.system, prompt: mp.prompt, maxTokens: 900 });
+            const result = parseBias(text);
+            if (!result) throw new Error('JSON을 읽지 못했습니다');
+            this.setStep(run, { role: 'biasDesk', id, state: 'done', finishedAt: this.now(), content: text.trim(), vote: result.bias, confidence: result.confidence });
+            return { member, persona, result, text: text.trim(), error: undefined as string | undefined };
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            this.setStep(run, { role: 'biasDesk', id, state: 'error', finishedAt: this.now(), error: msg });
+            return { member, persona, result: null, text: '', error: msg };
+          }
+        }));
+        this.setStep(run, { role: 'biasDesk', id: 'biasDesk', state: 'running', startedAt: this.now() });
+        const agg = aggregateBias(seats, rule);
+        run.committee = agg.view;
+        parsed = agg.bias;
+        content = committeeMinutes(agg.view, seats);
+      }
       this.snap.biases[symbol] = { ...parsed, updatedAt: this.now() };
-      this.setStep(run, { role: 'biasDesk', state: 'done', finishedAt: this.now(), content: text.trim() });
-      this.safeJournal({ type: 'bias', symbol, ...parsed });
+      this.setStep(run, { role: 'biasDesk', id: 'biasDesk', state: 'done', finishedAt: this.now(), content, vote: parsed.bias, confidence: parsed.confidence });
+      this.safeJournal({ type: 'bias', symbol, ...parsed, ...(run.committee ? { panel: run.committee } : {}) });
       this.log(`${symbol} 에이전트 방향 필터: ${biasKo(parsed.bias)} (확신도 ${(parsed.confidence * 100).toFixed(0)}%) — ${parsed.note}`, 'info', symbol);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       run.error = msg;
-      this.setStep(run, { role: 'biasDesk', state: 'error', finishedAt: this.now(), error: msg });
+      this.setStep(run, { role: 'biasDesk', id: 'biasDesk', state: 'error', finishedAt: this.now(), error: msg });
       this.log(`${symbol} 방향 필터 실패 (양방향 허용으로 계속): ${msg}`, 'warn', symbol);
     } finally {
       run.finishedAt = this.now();

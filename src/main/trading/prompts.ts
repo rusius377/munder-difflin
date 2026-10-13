@@ -43,7 +43,7 @@ const COIN_KO: Record<TradingSymbol, string> = { BTCUSDT: '비트코인(BTC)', E
 export const LANGUAGE_RULE =
   '모든 답변은 자연스러운 한국어로 작성하라. 단, 형식이 요구하는 라벨 줄("**Rating**:" 줄, "FINAL TRANSACTION PROPOSAL:" 줄)과 JSON의 키·열거값은 지정된 영어 그대로 유지하라.';
 
-const NO_EXTERNAL_TOOLS =
+export const NO_EXTERNAL_TOOLS =
   '외부 도구나 추가 데이터 없이, 이 프롬프트에 주어진 자료만으로 판단하라.';
 
 export function instrumentContext(ctx: DeskContext): string {
@@ -253,6 +253,22 @@ ${NO_EXTERNAL_TOOLS}`
   };
 }
 
+export const TRADER_OUTPUT_SPEC = `## 출력
+
+다음 섹션을 이 순서로 쓰되, 첫 줄은 행동만 단독으로 쓴다:
+
+- **Action**: LONG / SHORT / HOLD / CLOSE 중 정확히 하나. 리서치 등급 Overweight는 LONG, Underweight는 SHORT이며 확신 정도에 따라 규모를 줄인다. 상충 자체는 HOLD의 이유가 아니다. 기존 포지션을 정리해야 하면 CLOSE.
+- **근거**: 투자 계획과 가격 구조에 비춘 이유
+- **진입**: 시장가(MARKET) 또는 지정가(LIMIT)와 가격
+- **손절가**, **목표가**: 절대 가격 (손절은 무효화 수준 바깥, ATR을 고려)
+- **레버리지**, **리스크 비율(자본 대비 %)**, **예상 보유 시간**
+
+마지막 줄은 반드시 "FINAL TRANSACTION PROPOSAL: **LONG**"처럼 LONG/SHORT/HOLD/CLOSE 중 하나로 끝내라.`;
+
+export function traderConstraints(c: DeskConstraints): string {
+  return `운용 제약(위반 시 리스크 엔진이 거부하거나 조정함): 최대 레버리지 ${c.maxLeverage}배, 1회 최대 손실 자본의 ${c.riskPerTradePct}%, 최소 손익비 ${c.minRewardRisk}:1, 실행 환경 ${c.venueLabel}.`;
+}
+
 export function traderPrompt(ctx: DeskContext, investmentPlan: string, technicalReport: string): { system: string; prompt: string } {
   const c = ctx.constraints;
   const grounding = technicalReport.trim()
@@ -267,24 +283,14 @@ ${ctx.snapshot.verified}
 ${technicalReport.trim() ? `기술적 분석 보고서:\n${technicalReport}\n\n` : ''}현재 포트폴리오:
 ${ctx.portfolio}
 
-운용 제약(위반 시 리스크 엔진이 거부하거나 조정함): 최대 레버리지 ${c.maxLeverage}배, 1회 최대 손실 자본의 ${c.riskPerTradePct}%, 최소 손익비 ${c.minRewardRisk}:1, 실행 환경 ${c.venueLabel}.
+${traderConstraints(c)}
 
 제안된 투자 계획:
 ${investmentPlan}
 
 정보에 근거한 전략적 거래 결정을 내려라.
 
-## 출력
-
-다음 섹션을 이 순서로 쓰되, 첫 줄은 행동만 단독으로 쓴다:
-
-- **Action**: LONG / SHORT / HOLD / CLOSE 중 정확히 하나. 리서치 등급 Overweight는 LONG, Underweight는 SHORT이며 확신 정도에 따라 규모를 줄인다. 상충 자체는 HOLD의 이유가 아니다. 기존 포지션을 정리해야 하면 CLOSE.
-- **근거**: 투자 계획과 가격 구조에 비춘 이유
-- **진입**: 시장가(MARKET) 또는 지정가(LIMIT)와 가격
-- **손절가**, **목표가**: 절대 가격 (손절은 무효화 수준 바깥, ATR을 고려)
-- **레버리지**, **리스크 비율(자본 대비 %)**, **예상 보유 시간**
-
-마지막 줄은 반드시 "FINAL TRANSACTION PROPOSAL: **LONG**"처럼 LONG/SHORT/HOLD/CLOSE 중 하나로 끝내라.`
+${TRADER_OUTPUT_SPEC}`
   };
 }
 

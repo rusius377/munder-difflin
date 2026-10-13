@@ -16,10 +16,12 @@ Derived material and what was changed:
   scalping.
 - `agents.ts` — the TradingAgents graph (parallel analysts, research debate,
   research manager, trader, three-way risk debate, portfolio manager) and its
-  turn-order/termination logic, re-implemented as plain TypeScript.
+  turn-order/termination logic, re-implemented as plain TypeScript, extended so
+  every role can be staffed by several agents (see `teams.ts`).
 - `decision.ts` — rating parsing follows TradingAgents' "first Rating line wins"
   behaviour.
 
 Everything else in this folder (Binance client, market data, indicators, risk
-engine, brokers, scalper, engine, IPC) is original to Munder Difflin and is
+engine, brokers, scalper, engine, IPC, and the multi-agent teams in `teams.ts`:
+personas, team-lead merges, committee and panel vote tallies) is original to Munder Difflin and is
 covered by the repository's MIT license.

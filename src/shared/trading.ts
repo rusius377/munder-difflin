@@ -11,6 +11,10 @@
  *   - `scalping` — a fast rule-based entry/exit loop on 1m/5m candles and the
  *                  order book, optionally gated by a periodic agent "bias desk".
  *
+ * Every team can be staffed by several agents with different specialties
+ * (`TeamSettings`): analyst and trader teams are merged by a lead, the
+ * portfolio committee and the bias panel vote and code tallies the votes.
+ *
  * This file is imported by BOTH the main process and the renderer, so it holds
  * no Node or DOM APIs: plain data, defaults and pure validation only.
  *
@@ -142,6 +146,92 @@ export interface ScalpingSettings {
   biasRefreshMinutes: number;
 }
 
+/**
+ * How a set of independent votes becomes one call (the portfolio committee
+ * and the scalping bias panel). Shares are taken over the members who
+ * answered; a quorum (more than half the seats) must answer at all.
+ *   majority      — more than half
+ *   supermajority — at least two thirds
+ *   unanimous     — every member who answered
+ */
+export type ConsensusRule = 'majority' | 'supermajority' | 'unanimous';
+export const CONSENSUS_RULES: readonly ConsensusRule[] = ['majority', 'supermajority', 'unanimous'];
+
+/** Roles the desk can staff with several agents (each with its own specialty). */
+export type TeamRole =
+  | AnalystKey
+  | 'bull' | 'bear' | 'trader'
+  | 'aggressive' | 'conservative' | 'neutral'
+  | 'portfolioManager' | 'biasDesk';
+
+/**
+ * Headcount per team. With 1 everywhere the desk is the original TradingAgents
+ * graph (one agent per role). Above 1:
+ *   - analysts      N specialists per analyst role → the role's team lead merges them
+ *   - researchers   N bulls and N bears debate in turn → research manager judges
+ *   - traders       N independent proposals → head trader merges them (with the tally)
+ *   - risk          N debaters per stance (aggressive / conservative / neutral)
+ *   - portfolio     N committee members vote independently → code tallies (consensus rule)
+ *   - bias panel    N scalping-direction judges vote → code tallies (approval per side)
+ */
+export interface TeamSettings {
+  analystsPerRole: number;
+  researchersPerSide: number;
+  traders: number;
+  riskPerStance: number;
+  portfolioCommittee: number;
+  biasPanel: number;
+  consensus: ConsensusRule;
+  /** Concurrent LLM calls (each Claude-subscription call is its own hidden session). */
+  maxParallel: number;
+}
+
+export const TEAM_LIMITS = {
+  analystsPerRole: 3,
+  researchersPerSide: 3,
+  traders: 5,
+  riskPerStance: 2,
+  portfolioCommittee: 5,
+  biasPanel: 5,
+  maxParallel: 8
+} as const;
+
+/**
+ * Specialty of each seat, in seat order (seat 1 = first key). The Korean
+ * persona text the agents read lives in main/trading/teams.ts; the UI shows
+ * `trading.personas.<role>.<key>`.
+ */
+export const TEAM_PERSONA_KEYS: Record<TeamRole, readonly string[]> = {
+  technical: ['trend', 'reversion', 'structure'],
+  derivatives: ['funding', 'positioning', 'flow'],
+  news: ['crypto', 'macro', 'event'],
+  sentiment: ['contrarian', 'momentum', 'crowd'],
+  bull: ['momentum', 'structural', 'catalyst'],
+  bear: ['momentum', 'structural', 'catalyst'],
+  trader: ['swing', 'breakout', 'reversion', 'quant', 'flow'],
+  aggressive: ['opportunity', 'momentum'],
+  conservative: ['preservation', 'tail'],
+  neutral: ['balance', 'scenario'],
+  portfolioManager: ['cio', 'risk', 'quant', 'macro', 'execution'],
+  biasDesk: ['trend', 'flow', 'risk', 'sentiment', 'structure']
+};
+
+export type TeamPreset = 'solo' | 'standard' | 'full';
+export const TEAM_PRESETS: Record<TeamPreset, Omit<TeamSettings, 'consensus' | 'maxParallel'>> = {
+  /** The original TradingAgents graph: one agent per role. */
+  solo: { analystsPerRole: 1, researchersPerSide: 1, traders: 1, riskPerStance: 1, portfolioCommittee: 1, biasPanel: 1 },
+  standard: { analystsPerRole: 2, researchersPerSide: 2, traders: 3, riskPerStance: 1, portfolioCommittee: 3, biasPanel: 3 },
+  full: { analystsPerRole: 3, researchersPerSide: 3, traders: 5, riskPerStance: 2, portfolioCommittee: 5, biasPanel: 5 }
+};
+
+/** Which preset these numbers are, if any. */
+export function teamPresetOf(t: TeamSettings): TeamPreset | null {
+  for (const [name, p] of Object.entries(TEAM_PRESETS) as Array<[TeamPreset, (typeof TEAM_PRESETS)[TeamPreset]]>) {
+    if ((Object.keys(p) as Array<keyof typeof p>).every((k) => p[k] === t[k])) return name;
+  }
+  return null;
+}
+
 /** Hands-off operation: what the app does on its own around the desk. */
 export interface AutomationSettings {
   /** Start the desk automatically when the app launches (with the saved mode/venue). */
@@ -163,6 +253,7 @@ export interface TradingConfig {
   risk: RiskSettings;
   agents: AgentModeSettings;
   scalping: ScalpingSettings;
+  teams: TeamSettings;
   automation: AutomationSettings;
 }
 
@@ -241,6 +332,11 @@ export function defaultTradingConfig(): TradingConfig {
       agentBias: true,
       biasRefreshMinutes: 15
     },
+    teams: {
+      ...TEAM_PRESETS.standard,
+      consensus: 'majority',
+      maxParallel: 4
+    },
     automation: {
       autoStart: false,
       keepAwake: true,
@@ -292,6 +388,7 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
   const risk = obj(i.risk);
   const ag = obj(i.agents);
   const sc = obj(i.scalping);
+  const tm = obj(i.teams);
   const au = obj(i.automation);
   const bool = (v: unknown, fb: boolean) => (typeof v === 'boolean' ? v : fb);
 
@@ -391,6 +488,16 @@ export function normalizeTradingConfig(input: unknown): TradingConfig {
       reflect: typeof ag.reflect === 'boolean' ? ag.reflect : d.agents.reflect
     },
     scalping,
+    teams: {
+      analystsPerRole: clampInt(tm.analystsPerRole, 1, TEAM_LIMITS.analystsPerRole, d.teams.analystsPerRole),
+      researchersPerSide: clampInt(tm.researchersPerSide, 1, TEAM_LIMITS.researchersPerSide, d.teams.researchersPerSide),
+      traders: clampInt(tm.traders, 1, TEAM_LIMITS.traders, d.teams.traders),
+      riskPerStance: clampInt(tm.riskPerStance, 1, TEAM_LIMITS.riskPerStance, d.teams.riskPerStance),
+      portfolioCommittee: clampInt(tm.portfolioCommittee, 1, TEAM_LIMITS.portfolioCommittee, d.teams.portfolioCommittee),
+      biasPanel: clampInt(tm.biasPanel, 1, TEAM_LIMITS.biasPanel, d.teams.biasPanel),
+      consensus: oneOf(tm.consensus, CONSENSUS_RULES, d.teams.consensus),
+      maxParallel: clampInt(tm.maxParallel, 1, TEAM_LIMITS.maxParallel, d.teams.maxParallel)
+    },
     automation: {
       autoStart: bool(au.autoStart, d.automation.autoStart),
       keepAwake: bool(au.keepAwake, d.automation.keepAwake),
@@ -500,12 +607,55 @@ export interface AccountView {
 
 export interface AgentStepView {
   role: AgentRole;
+  /** Unique within a run: the role itself, or `role#n` for seat n of a staffed team. Absent = role. */
+  id?: string;
+  /** 1-based seat when the role is staffed by several agents. */
+  member?: number;
+  /** That seat's specialty (a TEAM_PERSONA_KEYS key). */
+  persona?: string;
+  /** The team's merge step: team lead, head trader, or the committee/panel tally. */
+  lead?: boolean;
+  /** A member's machine-read vote: Bullish/Bearish/Neutral, LONG/SHORT/HOLD/CLOSE, or a bias direction. */
+  vote?: string;
+  /** The member's own confidence, 0–1, when it gave one. */
+  confidence?: number;
   state: 'pending' | 'running' | 'done' | 'error' | 'skipped';
   startedAt?: number;
   finishedAt?: number;
   /** Markdown report / argument (Korean). */
   content?: string;
   error?: string;
+}
+
+/** One seat's vote on the portfolio committee or the bias panel. */
+export interface CommitteeVote {
+  member: number;
+  persona: string;
+  /** LONG/SHORT/HOLD/CLOSE (committee) or a BiasDirection (panel); null = did not answer. */
+  vote: string | null;
+  rating?: Rating | null;
+  confidence: number | null;
+  stopLoss?: number | null;
+  takeProfit?: number | null;
+}
+
+/** How a committee or panel reached (or missed) its call. */
+export interface CommitteeView {
+  kind: 'portfolio' | 'bias';
+  rule: ConsensusRule;
+  seats: number;
+  responded: number;
+  votes: CommitteeVote[];
+  /** The call: a TradeAction (committee) or a BiasDirection (panel). */
+  outcome: string;
+  /** Members whose vote is the outcome (or, for the panel, allows it). */
+  agree: number;
+  /** False when no direction reached the rule, so the call fell back to HOLD / NO_TRADE. */
+  reached: boolean;
+  /** Committee only: position size multiplier = share of answering members who agreed. */
+  sizeScale?: number;
+  /** Korean, one line. */
+  note: string;
 }
 
 export interface AgentRunView {
@@ -516,9 +666,65 @@ export interface AgentRunView {
   finishedAt?: number;
   steps: AgentStepView[];
   decision?: FinalDecision;
+  /** Present when a committee (portfolio) or panel (bias) voted. */
+  committee?: CommitteeView;
   verdict?: RiskVerdict;
   error?: string;
   reportPath?: string;
+}
+
+export function stepId(role: AgentRole, member?: number): string {
+  return member ? `${role}#${member}` : role;
+}
+
+export function stepKey(s: Pick<AgentStepView, 'id' | 'role'>): string {
+  return s.id ?? s.role;
+}
+
+function seats(role: TeamRole, n: number, opts: { lead: boolean }): AgentStepView[] {
+  if (n <= 1) return [{ role, id: role, state: 'pending' }];
+  const out: AgentStepView[] = opts.lead ? [{ role, id: role, lead: true, state: 'pending' }] : [];
+  for (let m = 1; m <= n; m++) out.push({ role, id: stepId(role, m), member: m, persona: TEAM_PERSONA_KEYS[role][m - 1], state: 'pending' });
+  return out;
+}
+
+/** Every step of a pipeline run with these teams, in display order. */
+export function pipelineSkeleton(selected: readonly AnalystKey[], t: TeamSettings): AgentStepView[] {
+  const steps: AgentStepView[] = [];
+  for (const k of ANALYST_KEYS) {
+    if (!selected.includes(k)) steps.push({ role: k, id: k, state: 'skipped' });
+    else steps.push(...seats(k, t.analystsPerRole, { lead: true }));
+  }
+  steps.push(...seats('bull', t.researchersPerSide, { lead: false }), ...seats('bear', t.researchersPerSide, { lead: false }));
+  steps.push({ role: 'researchManager', id: 'researchManager', state: 'pending' });
+  steps.push(...seats('trader', t.traders, { lead: true }));
+  for (const r of ['aggressive', 'conservative', 'neutral'] as const) steps.push(...seats(r, t.riskPerStance, { lead: false }));
+  steps.push(...seats('portfolioManager', t.portfolioCommittee, { lead: true }));
+  steps.push({ role: 'riskEngine', id: 'riskEngine', state: 'pending' }, { role: 'execution', id: 'execution', state: 'pending' });
+  return steps;
+}
+
+export function biasSkeleton(t: TeamSettings): AgentStepView[] {
+  return seats('biasDesk', t.biasPanel, { lead: true });
+}
+
+/** LLM calls one run makes with these settings (JSON repair turns not counted). */
+export function estimateLlmCalls(cfg: TradingConfig): { pipeline: number; pipelinePerHour: number; bias: number; biasPerHour: number } {
+  const t = cfg.teams;
+  const a = cfg.agents.analysts.length;
+  const pipeline =
+    a * t.analystsPerRole + (t.analystsPerRole > 1 ? a : 0) +
+    2 * t.researchersPerSide * cfg.agents.debateRounds + 1 +
+    t.traders + (t.traders > 1 ? 1 : 0) +
+    3 * t.riskPerStance * cfg.agents.riskRounds +
+    t.portfolioCommittee;
+  const n = cfg.symbols.length;
+  return {
+    pipeline,
+    pipelinePerHour: Math.round(pipeline * n * (60 / cfg.agents.intervalMinutes) * 10) / 10,
+    bias: t.biasPanel,
+    biasPerHour: cfg.scalping.agentBias ? Math.round(t.biasPanel * n * (60 / cfg.scalping.biasRefreshMinutes) * 10) / 10 : 0
+  };
 }
 
 export type BiasDirection = 'LONG_ONLY' | 'SHORT_ONLY' | 'BOTH' | 'NO_TRADE';

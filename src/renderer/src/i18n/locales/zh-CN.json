@@ -1431,7 +1431,7 @@
       "scalping": "剥头皮"
     },
     "modeHints": {
-      "agents": "完整的 TradingAgents 流程：四位分析师并行分析 → 多空研究员辩论 → 研究经理 → 交易员 → 三方风险辩论 → 投资组合经理最终决策。每个交易对按固定间隔运行。",
+      "agents": "完整的 TradingAgents 流程，每个团队可按设定配置多名智能体：分析师并行分析（每个角色由组长汇总）→ 多空研究员辩论 → 研究经理 → 交易员（由首席交易员汇总）→ 三方风险辩论 → 投资组合委员会投票。每个交易对按固定间隔运行。",
       "scalping": "基于短周期K线和盘口的快速规则循环（多空评分、ATR 止损止盈、时间止损、保本移动）。每隔几分钟，智能体方向过滤器会限定只做多、只做空、双向或不交易。"
     },
     "venues": {
@@ -1536,7 +1536,9 @@
       "noSignal": "尚未评估信号。",
       "bias": "智能体方向",
       "biasPending": "等待方向过滤器",
-      "biasOff": "关闭（允许双向）"
+      "biasOff": "关闭（允许双向）",
+      "committeeAgree": "委员会 {{agree}}/{{responded}} 赞成",
+      "committeeMissed": "委员会未达成共识 → 观望"
     },
     "roles": {
       "technical": "技术分析师",
@@ -1588,10 +1590,11 @@
       "groups": {
         "analysts": "分析师团队",
         "research": "研究团队",
-        "trader": "交易员",
-        "risk": "风险管理",
+        "trader": "交易团队",
+        "risk": "风险管理团队",
         "desk": "交易台",
-        "bias": "剥头皮方向"
+        "bias": "剥头皮方向",
+        "portfolio": "投资组合决策"
       },
       "decision": "最终决策",
       "entry": "入场",
@@ -1605,7 +1608,14 @@
       "notExecuted": "未下单",
       "working": "处理中…",
       "noContent": "尚无内容。",
-      "selectStep": "在左侧选择一个智能体查看报告。"
+      "selectStep": "在左侧选择一个智能体查看报告。",
+      "committee": "投资组合委员会",
+      "panel": "方向过滤小组",
+      "consensusReached": "赞成 {{agree}}/{{responded}}",
+      "consensusMissed": "未达成共识",
+      "sizeScale": "仓位 {{pct}}%",
+      "noVote": "未回复",
+      "seats": "{{count}} 人"
     },
     "trades": {
       "none": "还没有已平仓的交易。",
@@ -1644,7 +1654,8 @@
     },
     "units": {
       "sec": "秒",
-      "min": "分"
+      "min": "分",
+      "people": "人"
     },
     "settings": {
       "runningNote": "交易台正在运行。风控和策略数值立即生效；模式、执行环境、交易对和 LLM 的变更需要重启。",
@@ -1663,7 +1674,8 @@
         "risk": "风控限制",
         "agents": "智能体算法模式",
         "scalping": "剥头皮模式",
-        "automation": "自动交易"
+        "automation": "自动交易",
+        "teams": "智能体团队"
       },
       "fields": {
         "mode": "模式",
@@ -1724,7 +1736,16 @@
         "autoStart": "打开应用时自动启动交易台",
         "keepAwake": "交易时防止电脑休眠",
         "notify": "桌面通知",
-        "openAtLogin": "登录时打开应用"
+        "openAtLogin": "登录时打开应用",
+        "teamPreset": "团队预设",
+        "analystsPerRole": "每个分析角色人数",
+        "researchersPerSide": "多空每方研究员",
+        "traders": "交易员人数",
+        "riskPerStance": "每种风险立场人数",
+        "portfolioCommittee": "投资组合委员会人数",
+        "biasPanel": "方向过滤小组（剥头皮）",
+        "maxParallel": "同时运行的智能体",
+        "consensus": "共识规则"
       },
       "automationIntro": "订单通过币安 API 下达时应用自动执行的事项。只有 Munder Difflin 打开时交易台才会交易。",
       "autoStartLive": "实盘环境已开启自动启动：每次打开应用都会用真实资金恢复交易。",
@@ -1733,6 +1754,115 @@
         "keepAwake": "交易台运行时阻止系统挂起应用。电脑休眠时无法移动止损、执行时间止损或开始下一次分析。",
         "notify": "开仓、平仓、触发每日上限暂停和错误（错误通知每分钟最多一次）。",
         "openAtLogin": "立即生效（不需要“保存设置”）。与自动启动一起开启，重启后交易台会自动恢复。"
+      },
+      "teamsIntro": "每个团队有多少名智能体。每个席位都有各自的专长，他们的意见会被汇总成一个结果。",
+      "teamsHow": "分析师和交易员：组长（首席交易员）阅读每位成员的报告和投票统计，写出一份汇总报告。研究员和风险辩论者：更多发言者轮流辩论。投资组合委员会和方向过滤小组：成员独立投票，由代码按共识规则计票；开仓使用赞成成员止损和目标价的中位数，仓位按赞成比例缩小。",
+      "teamEstimate": "预计 LLM 调用：每次流程 {{pipeline}} 次（约 {{pipelinePerHour}} 次/小时）· 每次方向刷新 {{bias}} 次（约 {{biasPerHour}} 次/小时）",
+      "teamSubscriptionNote": "使用 Claude 订阅时，每次调用都是一个独立的隐藏 Claude Code 会话，并计入套餐用量。席位越多越快触及用量上限：如果触及，请延长间隔或降低并发数。"
+    },
+    "votes": {
+      "Bullish": "看多",
+      "Bearish": "看空",
+      "Neutral": "中性",
+      "LONG": "做多",
+      "SHORT": "做空",
+      "HOLD": "观望",
+      "CLOSE": "平仓",
+      "LONG_ONLY": "仅多",
+      "SHORT_ONLY": "仅空",
+      "BOTH": "双向",
+      "NO_TRADE": "禁止开仓"
+    },
+    "team": {
+      "lead": {
+        "technical": "组长汇总",
+        "derivatives": "组长汇总",
+        "news": "组长汇总",
+        "sentiment": "组长汇总",
+        "trader": "首席交易员汇总",
+        "portfolioManager": "委员会计票",
+        "biasDesk": "小组计票"
+      }
+    },
+    "consensus": {
+      "majority": "过半数",
+      "supermajority": "三分之二",
+      "unanimous": "全体一致"
+    },
+    "consensusHints": {
+      "majority": "超过一半的回复委员选择同一操作时，委员会采纳该操作，否则观望。方向过滤小组在超过一半成员允许时开放该方向。",
+      "supermajority": "需要至少三分之二的回复委员同意；交易更少，但每笔共识更广。",
+      "unanimous": "所有回复委员必须一致同意；最保守的规则。"
+    },
+    "teamPresets": {
+      "solo": "每角色 1 人（原版 TradingAgents）",
+      "standard": "标准委员会",
+      "full": "扩展委员会",
+      "custom": "自定义"
+    },
+    "personas": {
+      "technical": {
+        "trend": "趋势跟随图表师",
+        "reversion": "震荡指标与均值回归",
+        "structure": "价格结构与波动率"
+      },
+      "derivatives": {
+        "funding": "资金费率与基差",
+        "positioning": "持仓与爆仓",
+        "flow": "订单流"
+      },
+      "news": {
+        "crypto": "加密货币记者",
+        "macro": "宏观经济学家",
+        "event": "监管与事件风险"
+      },
+      "sentiment": {
+        "contrarian": "逆向情绪分析师",
+        "momentum": "情绪动量分析师",
+        "crowd": "群体持仓分析师"
+      },
+      "bull": {
+        "momentum": "动量多头",
+        "structural": "资金与持仓多头",
+        "catalyst": "催化剂与宏观多头"
+      },
+      "bear": {
+        "momentum": "趋势衰竭空头",
+        "structural": "杠杆与爆仓空头",
+        "catalyst": "事件与宏观空头"
+      },
+      "trader": {
+        "swing": "波段交易员",
+        "breakout": "突破交易员",
+        "reversion": "回调交易员",
+        "quant": "量化交易员",
+        "flow": "衍生品流向交易员"
+      },
+      "aggressive": {
+        "opportunity": "机会捕捉型",
+        "momentum": "趋势追随型"
+      },
+      "conservative": {
+        "preservation": "资本保全型",
+        "tail": "尾部风险型"
+      },
+      "neutral": {
+        "balance": "平衡调整型",
+        "scenario": "情景分析型"
+      },
+      "portfolioManager": {
+        "cio": "首席投资官",
+        "risk": "首席风险官",
+        "quant": "量化投资组合经理",
+        "macro": "宏观投资组合经理",
+        "execution": "执行投资组合经理"
+      },
+      "biasDesk": {
+        "trend": "趋势评判员",
+        "flow": "流向评判员",
+        "risk": "风险评判员",
+        "sentiment": "情绪评判员",
+        "structure": "结构评判员"
       }
     }
   }

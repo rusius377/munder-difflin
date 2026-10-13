@@ -1431,7 +1431,7 @@
       "scalping": "scalping"
     },
     "modeHints": {
-      "agents": "The full TradingAgents pipeline: four analysts in parallel, a bull/bear research debate, research manager, trader, a three-way risk debate and the portfolio manager's final call. Runs on a fixed interval per symbol.",
+      "agents": "The full TradingAgents pipeline, with every team staffed by as many agents as you set: analysts in parallel (merged by a team lead per role), a bull/bear research debate, research manager, traders (merged by a head trader), a three-way risk debate and the portfolio committee's vote. Runs on a fixed interval per symbol.",
       "scalping": "A fast rule-based loop on short candles and the order book (score per side, ATR stop and target, time stop, break-even). Every few minutes an agent bias desk can restrict it to longs, shorts, both or nothing."
     },
     "venues": {
@@ -1536,7 +1536,9 @@
       "noSignal": "No signal evaluated yet.",
       "bias": "agent bias",
       "biasPending": "waiting for the bias desk",
-      "biasOff": "off (both sides allowed)"
+      "biasOff": "off (both sides allowed)",
+      "committeeAgree": "committee {{agree}}/{{responded}} agreed",
+      "committeeMissed": "committee: no consensus → hold"
     },
     "roles": {
       "technical": "Technical analyst",
@@ -1588,10 +1590,11 @@
       "groups": {
         "analysts": "Analyst team",
         "research": "Research team",
-        "trader": "Trader",
-        "risk": "Risk management",
+        "trader": "Trading team",
+        "risk": "Risk management team",
         "desk": "Desk",
-        "bias": "Scalping bias"
+        "bias": "Scalping bias",
+        "portfolio": "Portfolio decision"
       },
       "decision": "final decision",
       "entry": "entry",
@@ -1605,7 +1608,14 @@
       "notExecuted": "no order",
       "working": "Working on it…",
       "noContent": "Nothing written yet.",
-      "selectStep": "Pick an agent on the left to read its report."
+      "selectStep": "Pick an agent on the left to read its report.",
+      "committee": "Portfolio committee",
+      "panel": "Bias panel",
+      "consensusReached": "agreed {{agree}}/{{responded}}",
+      "consensusMissed": "no consensus",
+      "sizeScale": "size {{pct}}%",
+      "noVote": "no answer",
+      "seats": "{{count}} seats"
     },
     "trades": {
       "none": "No closed trades yet.",
@@ -1644,7 +1654,8 @@
     },
     "units": {
       "sec": "sec",
-      "min": "min"
+      "min": "min",
+      "people": "seats"
     },
     "settings": {
       "runningNote": "The desk is running. Risk and strategy numbers apply right away; mode, venue, symbol and LLM changes need a restart.",
@@ -1663,7 +1674,8 @@
         "risk": "risk limits",
         "agents": "agent algorithm mode",
         "scalping": "scalping mode",
-        "automation": "automatic trading"
+        "automation": "automatic trading",
+        "teams": "agent teams"
       },
       "fields": {
         "mode": "mode",
@@ -1724,7 +1736,16 @@
         "autoStart": "start the desk when the app opens",
         "keepAwake": "keep the computer awake while trading",
         "notify": "desktop notifications",
-        "openAtLogin": "open the app when I log in"
+        "openAtLogin": "open the app when I log in",
+        "teamPreset": "team preset",
+        "analystsPerRole": "analysts per role",
+        "researchersPerSide": "researchers per side",
+        "traders": "traders",
+        "riskPerStance": "risk debaters per stance",
+        "portfolioCommittee": "portfolio committee",
+        "biasPanel": "bias panel (scalping)",
+        "maxParallel": "agents running at once",
+        "consensus": "consensus rule"
       },
       "automationIntro": "What the app does on its own once orders run through the Binance API. The desk only trades while Munder Difflin is open.",
       "autoStartLive": "Auto-start is on for the LIVE venue: every app launch resumes trading real money.",
@@ -1733,6 +1754,115 @@
         "keepAwake": "Stops the system from suspending the app while the desk runs. A sleeping computer cannot move stops, run time exits or start the next analysis.",
         "notify": "Entries, exits, daily-limit halts and errors (at most one error notice a minute).",
         "openAtLogin": "Applies immediately (not part of “save settings”). Together with auto-start, the desk resumes on its own after a reboot."
+      },
+      "teamsIntro": "How many agents sit on each team. Every seat gets its own specialty, and their opinions are merged into one result.",
+      "teamsHow": "Analysts and traders: a team lead (head trader) reads every member's report and the vote tally and writes one merged report. Researchers and risk debaters: more speakers take turns in the debate. Portfolio committee and bias panel: members vote independently and code tallies the votes with the consensus rule; an entry uses the agreeing members' median stop and target, sized down to the share that agreed.",
+      "teamEstimate": "Estimated LLM calls: {{pipeline}} per pipeline run (≈{{pipelinePerHour}}/hour) · {{bias}} per bias refresh (≈{{biasPerHour}}/hour)",
+      "teamSubscriptionNote": "With the Claude subscription every call is its own hidden Claude Code session and counts against your plan's usage. More seats reach the usage limit sooner: lengthen the interval or lower the concurrency if you hit it."
+    },
+    "votes": {
+      "Bullish": "bullish",
+      "Bearish": "bearish",
+      "Neutral": "neutral",
+      "LONG": "long",
+      "SHORT": "short",
+      "HOLD": "hold",
+      "CLOSE": "close",
+      "LONG_ONLY": "long only",
+      "SHORT_ONLY": "short only",
+      "BOTH": "both",
+      "NO_TRADE": "no trade"
+    },
+    "team": {
+      "lead": {
+        "technical": "team lead's merge",
+        "derivatives": "team lead's merge",
+        "news": "team lead's merge",
+        "sentiment": "team lead's merge",
+        "trader": "head trader's merge",
+        "portfolioManager": "committee tally",
+        "biasDesk": "panel tally"
+      }
+    },
+    "consensus": {
+      "majority": "majority",
+      "supermajority": "two thirds",
+      "unanimous": "unanimous"
+    },
+    "consensusHints": {
+      "majority": "The committee follows an action more than half of the answering members chose; otherwise it holds. The bias panel opens a side when more than half allow it.",
+      "supermajority": "Needs at least two thirds of the answering members; fewer trades, each with broader agreement.",
+      "unanimous": "Every answering member must agree; the most conservative rule."
+    },
+    "teamPresets": {
+      "solo": "1 per role (original TradingAgents)",
+      "standard": "standard committee",
+      "full": "full committee",
+      "custom": "custom"
+    },
+    "personas": {
+      "technical": {
+        "trend": "Trend follower",
+        "reversion": "Oscillators & mean reversion",
+        "structure": "Price structure & volatility"
+      },
+      "derivatives": {
+        "funding": "Funding & basis",
+        "positioning": "Positioning & liquidations",
+        "flow": "Order flow"
+      },
+      "news": {
+        "crypto": "Crypto reporter",
+        "macro": "Macro economist",
+        "event": "Regulation & event risk"
+      },
+      "sentiment": {
+        "contrarian": "Contrarian",
+        "momentum": "Sentiment momentum",
+        "crowd": "Crowd positioning"
+      },
+      "bull": {
+        "momentum": "Momentum bull",
+        "structural": "Flow & positioning bull",
+        "catalyst": "Catalyst & macro bull"
+      },
+      "bear": {
+        "momentum": "Fading-trend bear",
+        "structural": "Leverage & liquidation bear",
+        "catalyst": "Event & macro bear"
+      },
+      "trader": {
+        "swing": "Swing trader",
+        "breakout": "Breakout trader",
+        "reversion": "Pullback trader",
+        "quant": "Quant trader",
+        "flow": "Derivatives-flow trader"
+      },
+      "aggressive": {
+        "opportunity": "Opportunity seeker",
+        "momentum": "Momentum chaser"
+      },
+      "conservative": {
+        "preservation": "Capital preserver",
+        "tail": "Tail-risk hawk"
+      },
+      "neutral": {
+        "balance": "Balancer",
+        "scenario": "Scenario analyst"
+      },
+      "portfolioManager": {
+        "cio": "Chief investment officer",
+        "risk": "Chief risk officer",
+        "quant": "Quant portfolio manager",
+        "macro": "Macro portfolio manager",
+        "execution": "Execution portfolio manager"
+      },
+      "biasDesk": {
+        "trend": "Trend judge",
+        "flow": "Flow judge",
+        "risk": "Risk judge",
+        "sentiment": "Sentiment judge",
+        "structure": "Structure judge"
       }
     }
   }

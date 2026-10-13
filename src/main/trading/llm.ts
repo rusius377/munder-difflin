@@ -196,6 +196,31 @@ class OpenAiChatClient implements LlmClient {
   }
 }
 
+/**
+ * At most `max` calls in flight; the rest wait their turn (FIFO). A staffed
+ * desk can ask for a dozen analyst reports at once, and with the Claude
+ * subscription each call is a whole hidden Claude Code session.
+ */
+export function limitConcurrency(client: LlmClient, max: number): LlmClient {
+  const limit = Math.max(1, Math.floor(max));
+  let active = 0;
+  const waiting: Array<() => void> = [];
+  const acquire = () => new Promise<void>((resolve) => {
+    if (active < limit) { active++; resolve(); } else waiting.push(() => { active++; resolve(); });
+  });
+  const release = () => {
+    active--;
+    waiting.shift()?.();
+  };
+  return {
+    label: client.label,
+    async complete(call: LlmCall): Promise<string> {
+      await acquire();
+      try { return await client.complete(call); } finally { release(); }
+    }
+  };
+}
+
 export function createLlmClient(s: LlmSettings, deps: LlmDeps): LlmClient {
   switch (s.provider) {
     case 'anthropic':
