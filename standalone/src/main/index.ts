@@ -8,7 +8,7 @@
  * app's own small settings.
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { registerTradingIpc } from '../../../src/main/trading/ipc';
 import { runHiddenClaude } from '../../../src/main/hiddenClaude';
@@ -75,8 +75,39 @@ function createWindow(): void {
     }
   });
   win.on('closed', () => { win = null; });
+  if (process.env.TRADING_DESK_SMOKE) runSmoke(win, process.env.TRADING_DESK_SMOKE);
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   else void win.loadFile(path.join(__dirname, '../renderer/index.html'));
+}
+
+/**
+ * CI smoke test of the PACKAGED app (TRADING_DESK_SMOKE=<file>): once the page
+ * has loaded, check the screens rendered and the trading IPC answers, write the
+ * verdict to <file> and exit. Proves the asar paths, preload, renderer bundle
+ * and native node-pty all load in the real build.
+ */
+function runSmoke(w: BrowserWindow, out: string): void {
+  const report = (r: Record<string, unknown>) => {
+    try { writeFileSync(out, JSON.stringify({ version: app.getVersion(), ...r })); } catch { /* nowhere to report */ }
+    quitConfirmed = true;
+    app.exit(r.ok ? 0 : 1);
+  };
+  w.webContents.on('did-fail-load', (_e: unknown, code: number, desc: string) => report({ ok: false, stage: 'load', code, desc }));
+  w.webContents.on('render-process-gone', (_e: unknown, d: { reason: string }) => report({ ok: false, stage: 'renderer', reason: d.reason }));
+  w.webContents.once('did-finish-load', () => {
+    setTimeout(() => {
+      w.webContents.executeJavaScript(`(async () => {
+        const snap = await window.cth.tradingSnapshot();
+        const cfg = await window.cth.tradingGetConfig();
+        const info = await window.desk.info();
+        return { api: typeof window.cth.tradingStart === 'function', status: snap.status, mode: cfg.mode,
+          claude: info.claudeCommand, lang: document.documentElement.lang, text: document.body.innerText.slice(0, 160) };
+      })()`).then((r: { api: boolean; status: string; text: string }) => {
+        report({ ok: r.api && r.status === 'stopped' && /트레이딩 데스크/.test(r.text), ...r });
+      }).catch((e: unknown) => report({ ok: false, stage: 'ipc', error: String(e) }));
+    }, 3000);
+  });
+  setTimeout(() => report({ ok: false, stage: 'timeout' }), 60_000);
 }
 
 function openDataDir(): void {

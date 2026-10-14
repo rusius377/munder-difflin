@@ -93,6 +93,22 @@ jobs:
           [ -f builder.log ] || exit 0
           echo "::error title=electron-builder::$(grep -v '^\s*$' builder.log | tail -c 3500 | sed ':a;N;$!ba;s/\n/%0A/g')"
 
+      # Launch the packaged app once: it renders, answers over IPC and loads its
+      # native module, then reports and exits (src/main/index.ts runSmoke).
+      - name: Smoke-test the packaged app
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'desk-smoke.json'
+          $env:TRADING_DESK_SMOKE = $out
+          $p = Start-Process -FilePath (Resolve-Path 'dist\win-unpacked\TradingDesk.exe') -PassThru
+          for ($i = 0; $i -lt 90 -and -not (Test-Path $out); $i++) { Start-Sleep -Seconds 1 }
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+          if (-not (Test-Path $out)) { Write-Output "::error title=smoke::the packaged app did not report within 90 s"; exit 1 }
+          $json = Get-Content $out -Raw
+          Write-Output "::notice title=smoke::$json"
+          if (-not ($json | ConvertFrom-Json).ok) { Write-Output "::error title=smoke::$json"; exit 1 }
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
