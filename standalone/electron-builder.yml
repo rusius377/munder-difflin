@@ -2,6 +2,15 @@ appId: io.github.rusius377.tradingdesk
 productName: TradingDesk
 copyright: Copyright © 2026 rusius377
 
+# Where the build says the app comes from (it never publishes: the workflow
+# passes --publish never and uploads the files itself). Without this block
+# electron-builder looks for a repository in standalone/.git, finds none and
+# fails while writing latest.yml.
+publish:
+  provider: github
+  owner: rusius377
+  repo: munder-difflin
+
 # electron-vite emits into out/; package that plus package.json. node-pty is
 # native (the Claude-subscription provider drives Claude Code through it), so it
 # stays outside the asar.

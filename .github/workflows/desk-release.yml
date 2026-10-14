@@ -84,7 +84,6 @@ jobs:
           set -o pipefail
           npx electron-builder ${{ matrix.args }} --publish never 2>&1 | tee builder.log
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Explain a packaging failure
