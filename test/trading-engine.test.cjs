@@ -373,3 +373,23 @@ test('engine (live): a futures-only key with an IP allowlist starts and reports 
     eng.dispose();
   }
 });
+
+test('hidden session: the on-screen reason is surfaced when Claude Code saved no answer', () => {
+  const { screenHint } = loadTs('src/main/hiddenScreen.ts');
+  const esc = '\x1b';
+  const tui = [
+    `${esc}[2K${esc}[1G╭──────────────────────────────╮`,
+    `${esc}[2K│ > [Pasted text #1 +40 lines] │`,
+    `${esc}[38;5;246m  ⎿ Tip: Use /model to switch models${esc}[39m`,
+    `${esc}]0;claude${esc}\\`,
+    `${esc}[2K  ⎿  API Error: Claude Opus is not available with the Claude Pro plan. Run /model to pick another.${esc}[0m`,
+    `${esc}[2K  ⎿  API Error: Claude Opus is not available with the Claude Pro plan. Run /model to pick another.`,
+    '? for shortcuts'
+  ].join('\r\n');
+  assert.equal(screenHint(tui), '⎿ API Error: Claude Opus is not available with the Claude Pro plan. Run /model to pick another.');
+  assert.equal(screenHint(`${esc}[2K✻ Thinking… (12s · esc to interrupt)\r\n  ⎿ Tip: Run /upgrade for more usage`), null, 'tips and spinners are not reasons');
+  assert.match(screenHint('5-hour limit reached ∙ resets 3pm'), /limit reached/);
+  const msg = hiddenSessionError('no assistant response found in transcript — screen: API Error: Claude Opus is not available with the Claude Pro plan', 'opus', 360);
+  assert.match(msg, /답을 받지 못했습니다.*Claude Code 화면: API Error: Claude Opus is not available/);
+  assert.doesNotMatch(hiddenSessionError('no assistant response found in transcript', 'opus', 360), /화면/);
+});

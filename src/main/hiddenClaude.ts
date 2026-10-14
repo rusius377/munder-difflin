@@ -5,6 +5,7 @@ import { resolveCommand, userShellPath } from './shellEnv';
 import { expandTilde } from './fs';
 import { projectDir } from './transcript';
 import { ensureKilled } from './procKill';
+import { screenHint } from './hiddenScreen';
 
 /**
  * Shared helper: run a HIDDEN interactive claude session (ephemeral PTY) and
@@ -150,6 +151,8 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
 
     let settled = false;
     let promptSent = false;
+    /** The TUI's output after the prompt (tail only), for an error hint. */
+    let screen = '';
     let bootTimer: NodeJS.Timeout | null = null;
     let idleTimer: NodeJS.Timeout | null = null;
     let bootMaxTimer: NodeJS.Timeout;
@@ -177,9 +180,9 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
 
     const captureAndFinish = () => {
       const text = extractLastAssistantText(opts.cwd, spawnedAt);
-      finish(text
-        ? { ok: true, text }
-        : { ok: false, error: 'no assistant response found in transcript' });
+      if (text) { finish({ ok: true, text }); return; }
+      const hint = screenHint(screen);
+      finish({ ok: false, error: `no assistant response found in transcript${hint ? ` — screen: ${hint}` : ''}` });
     };
 
     const sendPrompt = () => {
@@ -192,12 +195,16 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
     };
 
     bootMaxTimer = setTimeout(sendPrompt, bootCapMs);
-    globalTimer = setTimeout(
-      () => finish({ ok: false, error: 'hidden session timed out' }),
-      timeoutMs,
-    );
+    globalTimer = setTimeout(() => {
+      const hint = screenHint(screen);
+      finish({ ok: false, error: `hidden session timed out${hint ? ` — screen: ${hint}` : ''}` });
+    }, timeoutMs);
 
-    ptyProc.onData(() => {
+    ptyProc.onData((data: string) => {
+      if (promptSent) {
+        screen += data;
+        if (screen.length > 20_000) screen = screen.slice(-12_000);
+      }
       if (!promptSent) {
         // Boot phase: reset quiet timer; send prompt once output goes quiet.
         if (bootTimer) clearTimeout(bootTimer);

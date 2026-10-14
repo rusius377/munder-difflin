@@ -149,12 +149,15 @@ class ClaudeSubscriptionClient implements LlmClient {
 /** A Claude Code session failure, in words the user can act on. */
 export function hiddenSessionError(raw: string | undefined, model: string, timeoutSec: number): string {
   const e = raw ?? '응답 없음';
+  // The hidden runner appends what the Claude Code screen showed, when it looked like a reason.
+  const screen = /— screen: (.*)$/s.exec(e)?.[1]?.trim();
+  const shown = screen ? ` · Claude Code 화면: ${screen}` : '';
   if (/timed out/i.test(e)) {
-    return `Claude 세션 실패 (모델 ${model}): ${timeoutSec}초 안에 답이 끝나지 않았습니다 — 설정 → 언어 모델 → 응답 제한 시간을 늘리거나, 깊은 모델을 sonnet으로 바꾸세요`;
+    return `Claude 세션 실패 (모델 ${model}): ${timeoutSec}초 안에 답이 끝나지 않았습니다 — 설정 → 언어 모델 → 응답 제한 시간을 늘리거나, 깊은 모델을 sonnet으로 바꾸세요${shown}`;
   }
   if (/no assistant response/i.test(e)) {
     return `Claude 세션 실패 (모델 ${model}): 답을 받지 못했습니다 — 지금 요금제에서 이 모델을 쓸 수 없거나 사용량 한도에 닿았을 수 있습니다. ` +
-      `터미널에서 "claude --model ${model}"을 실행해 확인하거나, 설정에서 이 모델을 sonnet으로 바꾸세요`;
+      `터미널에서 "claude --model ${model}"을 실행해 확인하거나, 설정에서 이 모델을 sonnet으로 바꾸세요${shown}`;
   }
   if (/ENOENT|not recognized|cannot find|spawn/i.test(e)) {
     return `Claude 세션 실패: Claude Code를 실행하지 못했습니다 (${e}) — 터미널에서 "claude"가 실행되는지 확인하세요`;
