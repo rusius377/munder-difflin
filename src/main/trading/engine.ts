@@ -811,7 +811,11 @@ export class TradingEngine {
     } catch (e) {
       const msg = e instanceof PipelineAborted ? '정지로 중단됨' : e instanceof Error ? e.message : String(e);
       run.error = msg;
-      for (const s of run.steps) if (s.state === 'running' || s.state === 'pending') s.state = s.state === 'running' ? 'error' : 'skipped';
+      // The step that was running when it failed carries the reason (shown when it is selected).
+      for (const s of run.steps) {
+        if (s.state === 'running') { s.state = 'error'; s.error ??= msg; }
+        else if (s.state === 'pending') s.state = 'skipped';
+      }
       this.log(`${symbol} 에이전트 분석 실패: ${msg}`, e instanceof PipelineAborted ? 'info' : 'error', symbol);
     } finally {
       run.finishedAt = this.now();

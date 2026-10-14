@@ -184,6 +184,25 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       throw e;
     }
   };
+  /**
+   * A deep-model call that falls back to the quick model once. The deep model
+   * (opus by default) is the slowest and the one a plan or a usage limit is
+   * most likely to refuse; one refusal must not end the whole analysis.
+   */
+  const callDeep = async (key: string, p: { system: string; prompt: string }, agent?: AgentRef): Promise<{ text: string; note?: string }> => {
+    try {
+      return { text: await call(key, 'deep', p, agent) };
+    } catch (e) {
+      if (e instanceof PipelineAborted) throw e;
+      const first = errText(e);
+      try {
+        return { text: await call(key, 'quick', p, agent), note: `깊은 모델 실패(${first}) — 빠른 모델로 대신 답함` };
+      } catch (e2) {
+        if (e2 instanceof PipelineAborted) throw e2;
+        throw new Error(`깊은 모델 실패: ${first} / 빠른 모델로 다시 시도했지만 실패: ${errText(e2)}`);
+      }
+    }
+  };
   const report = (agent: AgentRef, text: string, vote: string | null, confidence: number | null = null) => {
     try { deps.agents?.onOutput(agent, { text, vote, confidence }); } catch { /* bookkeeping only */ }
   };
@@ -313,10 +332,18 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
 
   // ── 3. research manager ──────────────────────────────────────────────────
   emit('researchManager', undefined, { state: 'running', startedAt: now() });
-  const investmentPlan = (await call('researchManager', 'deep', researchManagerPrompt(ctx, investmentHistory), refOf('researchManager'))).trim();
+  let rm: { text: string; note?: string };
+  try {
+    rm = await callDeep('researchManager', researchManagerPrompt(ctx, investmentHistory), refOf('researchManager'));
+  } catch (e) {
+    if (e instanceof PipelineAborted) throw e;
+    emit('researchManager', undefined, { state: 'error', finishedAt: now(), error: errText(e) });
+    throw new Error(`리서치 매니저 실패 — ${errText(e)}`);
+  }
+  const investmentPlan = rm.text.trim();
   const researchRating = parseRating(investmentPlan);
   report(refOf('researchManager'), investmentPlan, researchRating);
-  emit('researchManager', undefined, { state: 'done', finishedAt: now(), content: investmentPlan });
+  emit('researchManager', undefined, { state: 'done', finishedAt: now(), content: investmentPlan, error: rm.note });
 
   // ── 4. trader(s) ─────────────────────────────────────────────────────────
   const nT = teams.traders;
@@ -409,7 +436,8 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   const pmPrompt = portfolioManagerPrompt(ctx, investmentPlan, traderPlan, riskHistory.trim());
   /** One PM's decision, with one cheap repair turn if the JSON block is missing. */
   const decide = async (key: string, p: { system: string; prompt: string }, agent: AgentRef) => {
-    let text = (await call(key, 'deep', p, agent)).trim();
+    const first = await callDeep(key, p, agent);
+    let text = first.text.trim();
     let parsed = parseFinalDecision(text);
     if (!parsed.parsedJson) {
       try {
@@ -428,7 +456,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
       }
     }
     report(agent, text, parsed.decision.action, parsed.decision.confidence);
-    return { text, ...parsed };
+    return { text, note: first.note, ...parsed };
   };
 
   const nP = teams.portfolioCommittee;
@@ -438,11 +466,18 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
   let committee: CommitteeView | undefined;
   if (nP === 1) {
     emit('portfolioManager', undefined, { state: 'running', startedAt: now() });
-    const r = await decide('portfolioManager', pmPrompt, refOf('portfolioManager'));
+    let r: Awaited<ReturnType<typeof decide>>;
+    try {
+      r = await decide('portfolioManager', pmPrompt, refOf('portfolioManager'));
+    } catch (e) {
+      if (e instanceof PipelineAborted) throw e;
+      emit('portfolioManager', undefined, { state: 'error', finishedAt: now(), error: errText(e) });
+      throw new Error(`포트폴리오 매니저 실패 — ${errText(e)}`);
+    }
     finalText = r.text;
     decision = r.decision;
     parsedJson = r.parsedJson;
-    emit('portfolioManager', undefined, { state: 'done', finishedAt: now(), content: finalText, vote: decision.action, confidence: decision.confidence });
+    emit('portfolioManager', undefined, { state: 'done', finishedAt: now(), content: finalText, vote: decision.action, confidence: decision.confidence, error: r.note });
   } else {
     const seats = await Promise.all(range(nP).map(async (member) => {
       const persona = personaKey('portfolioManager', member);
@@ -451,7 +486,7 @@ export async function runPipeline(input: PipelineInput, deps: PipelineDeps): Pro
         const r = await decide(llmKey('portfolioManager', member), withMember(pmPrompt, memberRule('portfolioManager', member, nP, committeeClosing(teams.consensus))), refOf('portfolioManager', member));
         emit('portfolioManager', member, {
           state: 'done', finishedAt: now(), content: r.text, vote: r.decision.action, confidence: r.decision.confidence,
-          error: r.parsedJson ? undefined : 'JSON 없음 — 등급만 반영'
+          error: [r.note, r.parsedJson ? undefined : 'JSON 없음 — 등급만 반영'].filter(Boolean).join(' · ') || undefined
         });
         return { member, persona, decision: r.decision as FinalDecision | null, parsedJson: r.parsedJson, text: r.text, error: undefined as string | undefined };
       } catch (e) {

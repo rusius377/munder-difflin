@@ -20,6 +20,7 @@ const loadTs = require('./load-ts.cjs');
 const { makeFetch } = require('./fixtures/trading-fixtures.cjs');
 
 const { runPipeline } = loadTs('src/main/trading/agents.ts');
+const { createLlmClient, cliErrorReply, hiddenSessionError } = loadTs('src/main/trading/llm.ts');
 const { TradingEngine } = loadTs('src/main/trading/engine.ts');
 const { MarketData } = loadTs('src/main/trading/marketData.ts');
 const shared = loadTs('src/shared/trading.ts');
@@ -116,6 +117,69 @@ test('a failed analyst does not sink the run; a PM without JSON gets one repair 
   assert.equal(repairCalls, 1);
   assert.equal(r.parsedJson, true);
   assert.equal(r.decision.action, 'HOLD');
+});
+
+test('a deep-model failure falls back to the quick model for the research manager and the PM', async () => {
+  const snapshot = await snapshotFor();
+  const llm = mockLlm();
+  const orig = llm.complete;
+  llm.complete = async (call) => {
+    if (call.tier === 'deep') { llm.calls.push(call); throw new Error('Claude 세션 실패 (모델 opus): 답을 받지 못했습니다'); }
+    return orig.call(llm, call);
+  };
+  const steps = [];
+  const ctx = { symbol: 'BTCUSDT', snapshot, portfolio: '-', lessons: '', constraints: { maxLeverage: 10, riskPerTradePct: 1, minRewardRisk: 1.5, minConfidence: 0.55, defaultLeverage: 3, venueLabel: '모의투자' } };
+  const r = await runPipeline({ ctx, analysts: ['technical'], debateRounds: 1, riskRounds: 1 }, { llm, onStep: (s) => steps.push(s) });
+  const rmCalls = llm.calls.filter((c) => c.role.startsWith('researchManager')).map((c) => c.tier);
+  assert.deepEqual(rmCalls, ['deep', 'quick']);
+  const rm = steps.filter((s) => s.role === 'researchManager').pop();
+  assert.equal(rm.state, 'done');
+  assert.match(rm.error, /깊은 모델 실패.*빠른 모델로 대신/);
+  assert.equal(r.researchRating, 'Overweight');
+  const pm = steps.filter((s) => s.role === 'portfolioManager').pop();
+  assert.equal(pm.state, 'done');
+  assert.match(pm.error, /빠른 모델로 대신/);
+  assert.equal(r.decision.action, 'LONG');
+});
+
+test('when both models fail, the research manager step shows why and the run stops', async () => {
+  const snapshot = await snapshotFor();
+  const llm = mockLlm({ fail: (role) => role === 'researchManager' });
+  const steps = [];
+  const ctx = { symbol: 'BTCUSDT', snapshot, portfolio: '-', lessons: '', constraints: { maxLeverage: 10, riskPerTradePct: 1, minRewardRisk: 1.5, minConfidence: 0.55, defaultLeverage: 3, venueLabel: '모의투자' } };
+  await assert.rejects(
+    runPipeline({ ctx, analysts: ['technical'], debateRounds: 1, riskRounds: 1 }, { llm, onStep: (s) => steps.push(s) }),
+    /리서치 매니저 실패 — 깊은 모델 실패: mock failure for researchManager \/ 빠른 모델로 다시 시도했지만 실패/
+  );
+  const rm = steps.filter((s) => s.role === 'researchManager').pop();
+  assert.equal(rm.state, 'error');
+  assert.match(rm.error, /빠른 모델로 다시 시도했지만 실패/);
+  assert.ok(!llm.calls.some((c) => c.role.startsWith('trader')), 'no trader without a plan');
+});
+
+test('Claude subscription: deep calls get 1.5× the timeout; CLI failures become actionable errors', async () => {
+  const seen = [];
+  let reply = { ok: true, text: '**Rating**: Hold' };
+  const llm = createLlmClient({ provider: 'claude-subscription', quickModel: 'sonnet', deepModel: 'opus', baseUrl: 'http://x', timeoutSec: 240 }, {
+    fetch: async () => { throw new Error('no network'); }, getSecret: () => undefined, sessionRoot: tmpDir(), claudeCommand: 'claude',
+    runHidden: async (prompt, opts) => { seen.push(opts); return reply; }
+  });
+  await llm.complete({ role: 'researchManager-BTCUSDT', tier: 'deep', system: 'S', prompt: 'P' });
+  await llm.complete({ role: 'trader-BTCUSDT', tier: 'quick', system: 'S', prompt: 'P' });
+  assert.deepEqual(seen.map((o) => [o.model, o.timeoutMs]), [['opus', 360_000], ['sonnet', 240_000]]);
+
+  reply = { ok: false, error: 'hidden session timed out' };
+  await assert.rejects(llm.complete({ role: 'researchManager-BTCUSDT', tier: 'deep', system: 'S', prompt: 'P' }), /opus.*360초 안에 답이 끝나지 않았습니다.*응답 제한 시간/);
+  reply = { ok: false, error: 'no assistant response found in transcript' };
+  await assert.rejects(llm.complete({ role: 'researchManager-BTCUSDT', tier: 'deep', system: 'S', prompt: 'P' }), /답을 받지 못했습니다.*claude --model opus/);
+  reply = { ok: true, text: 'Claude Opus is not available with the Claude Pro plan. If you have updated your subscription plan recently, run /logout and /login.' };
+  await assert.rejects(llm.complete({ role: 'researchManager-BTCUSDT', tier: 'deep', system: 'S', prompt: 'P' }), /모델 opus.*not available with the Claude Pro plan/);
+  reply = { ok: true, text: 'API Error: 529 {"type":"error","error":{"type":"overloaded_error"}}' };
+  await assert.rejects(llm.complete({ role: 'trader-BTCUSDT', tier: 'quick', system: 'S', prompt: 'P' }), /API Error: 529/);
+  // A real report that happens to mention limits is not an error.
+  assert.equal(cliErrorReply(`**Rating**: Hold\n\n${'근거 '.repeat(200)} rate limit`), null);
+  assert.equal(cliErrorReply('**Rating**: Overweight\n\n상승 우위. 손절은 무효화 수준 아래.'), null);
+  assert.equal(hiddenSessionError('spawn claude ENOENT', 'opus', 360).includes('Claude Code를 실행하지 못했습니다'), true);
 });
 
 function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'md-trade-')); }

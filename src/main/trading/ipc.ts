@@ -301,9 +301,27 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
           claudeCommand: readConfig().defaultCommand ?? 'claude', runHidden: runHiddenClaude,
           prepareCwd: (cwd) => ensureClaudePermissionsAccepted(cwd), transcriptDirFor: (cwd) => projectDir(cwd)
         });
-        const t0 = Date.now();
-        const text = await llm.complete({ role: 'connection-test', tier: 'quick', system: '짧게 답하라.', prompt: '"연결 성공" 이라고만 답하라.', maxTokens: 50 });
-        return { ok: true, message: `${llm.label} — ${((Date.now() - t0) / 1000).toFixed(1)}초, 응답: ${text.slice(0, 60)}` };
+        // Both tiers: the deep model (research manager, portfolio manager) is the one a
+        // plan or a usage limit refuses, and finding out mid-analysis is too late.
+        const tiers: Array<['quick' | 'deep', string]> = cfg.llm.quickModel === cfg.llm.deepModel
+          ? [['quick', cfg.llm.quickModel]]
+          : [['quick', cfg.llm.quickModel], ['deep', cfg.llm.deepModel]];
+        const parts: string[] = [];
+        for (const [tier, model] of tiers) {
+          const t0 = Date.now();
+          try {
+            const text = await llm.complete({ role: `connection-test-${tier}`, tier, system: '짧게 답하라.', prompt: '"연결 성공" 이라고만 답하라.', maxTokens: 50 });
+            parts.push(`${tier === 'deep' ? '깊은' : '빠른'} 모델 ${model} OK (${((Date.now() - t0) / 1000).toFixed(1)}초, 응답: ${text.slice(0, 40)})`);
+          } catch (e) {
+            const why = e instanceof Error ? e.message : String(e);
+            return {
+              ok: false,
+              message: [...parts, `${tier === 'deep' ? '깊은' : '빠른'} 모델 ${model} 실패: ${why}`,
+                tier === 'deep' ? '리서치 매니저·포트폴리오 매니저가 이 모델을 씁니다 — 깊은 모델을 빠른 모델과 같은 값(예: sonnet)으로 바꾸면 해결됩니다' : ''].filter(Boolean).join(' · ')
+            };
+          }
+        }
+        return { ok: true, message: `${llm.label} — ${parts.join(' · ')}` };
       }
       const pub = new BinanceFuturesClient({ baseUrl: BINANCE_REST.live, fetch: fetchImpl });
       const prem = await pub.premiumIndex('BTCUSDT');

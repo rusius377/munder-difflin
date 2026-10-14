@@ -127,19 +127,51 @@ class ClaudeSubscriptionClient implements LlmClient {
     mkdirSync(cwd, { recursive: true });
     try { this.deps.prepareCwd?.(cwd); } catch { /* never block */ }
     const model = call.tier === 'deep' ? this.s.deepModel : this.s.quickModel;
+    // The deep model reads the whole debate and thinks longest: give it half as long again.
+    const timeoutSec = Math.round(this.s.timeoutSec * (call.tier === 'deep' ? 1.5 : 1));
     const res = await run(composeHiddenPrompt(call), {
       model,
       cwd,
       command: this.deps.claudeCommand,
       disallowedTools: DESK_DISALLOWED_TOOLS,
-      timeoutMs: this.s.timeoutSec * 1000,
+      timeoutMs: timeoutSec * 1000,
       // Long reports stream in bursts; give the TUI a little longer to go quiet.
       idleMs: 6000
     });
     if (this.deps.transcriptDirFor) pruneTranscripts(this.deps.transcriptDirFor(cwd));
-    if (!res.ok || !res.text) throw new Error(`Claude 세션 실패: ${res.error ?? '응답 없음'}`);
+    if (!res.ok || !res.text) throw new Error(hiddenSessionError(res.error, model, timeoutSec));
+    const refusal = cliErrorReply(res.text);
+    if (refusal) throw new Error(`Claude 세션 실패 (모델 ${model}): ${refusal}`);
     return res.text;
   }
+}
+
+/** A Claude Code session failure, in words the user can act on. */
+export function hiddenSessionError(raw: string | undefined, model: string, timeoutSec: number): string {
+  const e = raw ?? '응답 없음';
+  if (/timed out/i.test(e)) {
+    return `Claude 세션 실패 (모델 ${model}): ${timeoutSec}초 안에 답이 끝나지 않았습니다 — 설정 → 언어 모델 → 응답 제한 시간을 늘리거나, 깊은 모델을 sonnet으로 바꾸세요`;
+  }
+  if (/no assistant response/i.test(e)) {
+    return `Claude 세션 실패 (모델 ${model}): 답을 받지 못했습니다 — 지금 요금제에서 이 모델을 쓸 수 없거나 사용량 한도에 닿았을 수 있습니다. ` +
+      `터미널에서 "claude --model ${model}"을 실행해 확인하거나, 설정에서 이 모델을 sonnet으로 바꾸세요`;
+  }
+  if (/ENOENT|not recognized|cannot find|spawn/i.test(e)) {
+    return `Claude 세션 실패: Claude Code를 실행하지 못했습니다 (${e}) — 터미널에서 "claude"가 실행되는지 확인하세요`;
+  }
+  return `Claude 세션 실패 (모델 ${model}): ${e}`;
+}
+
+/**
+ * Claude Code writes some failures into the conversation as if they were the
+ * answer ("API Error: …", "… is not available with the … plan", usage limits).
+ * Those are short; a real desk report is not. Returns the message, or null.
+ */
+export function cliErrorReply(text: string): string | null {
+  const t = text.trim();
+  if (t.length > 600) return null;
+  const pattern = /^(API Error|Error:)|not available (with|on|for) (your|the|this)|usage limit|limit reached|rate[ _-]?limit|overloaded_error|Please run \/login|Invalid API key|credit balance|\/upgrade|model.*(not found|does not exist|not supported)/i;
+  return pattern.test(t) ? t.slice(0, 300) : null;
 }
 
 async function postJson(fetchImpl: FetchLike, url: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<unknown> {
