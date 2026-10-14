@@ -9,6 +9,8 @@ Munder Difflin 안에서 [TradingAgents](https://github.com/TauricResearch/Tradi
 > 순서로 검증하세요.
 
 > **처음 설치하는 방법과 바이낸스 API 자동매매 설정은 [`TRADING-SETUP.ko.md`](./TRADING-SETUP.ko.md)** 에 단계별로 있습니다.
+>
+> 같은 기능을 **Munder Difflin 없이 독립 실행 앱**으로도 쓸 수 있습니다: [`standalone/README.ko.md`](../standalone/README.ko.md).
 
 ## 여는 법
 

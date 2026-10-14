@@ -538,6 +538,7 @@ results become the scalper's experience (losing setups are skipped live) and the
 Paper trading by default; Binance demo and live are opt-in, and a code-enforced risk engine
 sizes every order from its stop. Reports are written in Korean. Guides (Korean): features in
 [`docs/TRADING.ko.md`](./docs/TRADING.ko.md), install-to-live-trading steps in [`docs/TRADING-SETUP.ko.md`](./docs/TRADING-SETUP.ko.md).
+The same desk also ships as a standalone app without the office ([`standalone/`](./standalone/README.ko.md), built by the Desk Release workflow).
 Research tool, not financial advice.
 
 ## Acknowledgements

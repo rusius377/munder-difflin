@@ -1,0 +1,91 @@
+name: Desk Release
+
+# Build the standalone trading desk (standalone/) — the trading desk without the
+# Munder Difflin office. Run it from the Actions tab (Run workflow) to get the
+# Windows installer as a downloadable artifact; push a `desk-v*` tag to also
+# publish a GitHub release. Independent of release.yml (which builds the office
+# app on `v*` tags).
+on:
+  workflow_dispatch:
+    inputs:
+      linux:
+        description: "Linux AppImage도 만들기"
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "desk-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build desk (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON((github.event_name == 'push' || inputs.linux) && '[{"os":"windows-2022","args":"--win"},{"os":"ubuntu-latest","args":"--linux"}]' || '[{"os":"windows-2022","args":"--win"}]') }}
+    defaults:
+      run:
+        working-directory: standalone
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: standalone/package-lock.json
+
+      # node-gyp (rebuilds node-pty for Electron) imports distutils, removed in
+      # Python 3.12: pin 3.11 and install setuptools, as release.yml does.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Provide distutils for node-gyp
+        run: python -m pip install --upgrade setuptools
+
+      - name: Install dependencies
+        shell: bash
+        run: npm ci || { echo "::warning::npm ci failed - falling back to npm install"; npm install --no-audit --no-fund; }
+
+      - name: Compile (electron-vite -> out/)
+        run: npm run build
+
+      - name: Package installer
+        run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: trading-desk-${{ matrix.os }}
+          path: |
+            standalone/dist/*.exe
+            standalone/dist/*.AppImage
+          if-no-files-found: error
+
+  publish:
+    name: Publish desk release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/desk-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 트레이딩 데스크 ${{ github.ref_name }}
+          body: |
+            트레이딩 데스크 (독립 실행 앱) — TradingAgents × 바이낸스 USDⓈ-M 선물.
+            Windows: `TradingDesk-*-win-x64-setup.exe` (설치) 또는 `-portable.exe` (설치 없이 실행).
+            연구용 도구이며 투자 조언이 아닙니다.
+          files: artifacts/**/*

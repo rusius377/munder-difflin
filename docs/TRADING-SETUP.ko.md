@@ -10,6 +10,9 @@
 
 ---
 
+> **Munder Difflin 없이 트레이딩 데스크만 쓰고 싶다면** 독립 실행 앱을 쓰세요 — 설치와 사용법은
+> [`standalone/README.ko.md`](../standalone/README.ko.md). 아래 5단계 이후(LLM·바이낸스 키·모의투자·실거래)는 두 앱이 같습니다.
+
 ## 전체 흐름 한눈에
 
 | 단계 | 할 일 | 걸리는 시간 |

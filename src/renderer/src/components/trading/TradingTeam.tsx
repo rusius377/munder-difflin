@@ -38,7 +38,7 @@ const th: CSSProperties = {
 };
 const td: CSSProperties = { ...mono, padding: '3px 6px', borderBottom: '1px solid var(--cth-ink-100)', whiteSpace: 'nowrap' };
 
-type Roster = { root: string; agents: AgentProjectView[]; registered: boolean };
+type Roster = { root: string; agents: AgentProjectView[]; registered: boolean; canRegister: boolean };
 
 export function TradingTeam({ snap }: { snap: TradingSnapshot | null }) {
   const { t } = useTranslation();
@@ -49,7 +49,7 @@ export function TradingTeam({ snap }: { snap: TradingSnapshot | null }) {
 
   const load = useCallback(() => {
     window.cth.tradingAgents()
-      .then((r) => { setData({ root: r.root, agents: r.agents, registered: r.registered }); if (!r.ok && r.error) setMsg({ text: r.error, error: true }); })
+      .then((r) => { setData({ root: r.root, agents: r.agents, registered: r.registered, canRegister: r.canRegister !== false }); if (!r.ok && r.error) setMsg({ text: r.error, error: true }); })
       .catch((e: unknown) => setMsg({ text: String(e), error: true }));
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -149,9 +149,9 @@ export function TradingTeam({ snap }: { snap: TradingSnapshot | null }) {
         <p style={hint}>{t('trading.roster.scoring')}</p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <PixelButton size="sm" variant="secondary" onClick={() => { void open(); }}>{t('trading.roster.openRoot')}</PixelButton>
-          {data.registered
+          {data.canRegister && (data.registered
             ? <span style={{ ...hint, color: 'var(--cth-status-success)' }}>✓ {t('trading.roster.registered')}</span>
-            : <PixelButton size="sm" variant="ghost" onClick={() => { void register(); }} title={t('trading.roster.registerHint')}>{t('trading.roster.register')}</PixelButton>}
+            : <PixelButton size="sm" variant="ghost" onClick={() => { void register(); }} title={t('trading.roster.registerHint')}>{t('trading.roster.register')}</PixelButton>)}
           <span style={{ ...mono, wordBreak: 'break-all' }}>{data.root}</span>
         </div>
         {msg && <div style={{ ...hint, color: msg.error ? 'var(--cth-status-blocked)' : 'var(--cth-ink-700)' }}>{msg.text}</div>}

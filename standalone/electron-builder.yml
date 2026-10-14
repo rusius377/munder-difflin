@@ -1,0 +1,62 @@
+appId: io.github.rusius377.tradingdesk
+productName: TradingDesk
+copyright: Copyright © 2026 rusius377
+
+# electron-vite emits into out/; package that plus package.json. node-pty is
+# native (the Claude-subscription provider drives Claude Code through it), so it
+# stays outside the asar.
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - out/**
+  - package.json
+
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+
+npmRebuild: true
+
+# The NautilusTrader backtest runner (Python). The desk installs nautilus_trader
+# into its own venv on first use and runs this script there.
+extraResources:
+  - from: ../resources/nautilus
+    to: nautilus
+    filter:
+      - "*.py"
+      - "*.txt"
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: TradingDesk-${version}-win-x64-setup.exe
+  shortcutName: TradingDesk
+
+portable:
+  artifactName: TradingDesk-${version}-win-x64-portable.exe
+
+linux:
+  category: Finance
+  icon: build/icon.png
+  target:
+    - target: AppImage
+      arch: [x64]
+  artifactName: TradingDesk-${version}-linux-x86_64.AppImage
+
+mac:
+  category: public.app-category.finance
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch: [arm64]
+  artifactName: TradingDesk-${version}-mac-${arch}.${ext}

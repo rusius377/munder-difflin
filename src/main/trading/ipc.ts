@@ -20,16 +20,16 @@
  *
  * Automation (config.automation): auto-start on launch, a power-save blocker
  * while the desk runs, and desktop notifications for entries/exits/halts/errors.
+ *
+ * The app hosting the desk is injected (TradingHost): Munder Difflin passes its
+ * secret store, Claude Code settings and project rooms (munderHost.ts); the
+ * standalone desk (standalone/) passes its own.
  */
 import { app, ipcMain, Notification, powerSaveBlocker, shell } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { runHiddenClaude } from '../hiddenClaude';
-import { ensureClaudePermissionsAccepted, readConfig, writeConfig } from '../config';
-import { projectDir } from '../transcript';
-import { deleteSecret, getSecret, hasSecret, setSecret } from '../integrations';
 import { TradingEngine } from './engine';
-import { createLlmClient } from './llm';
+import { createLlmClient, type HiddenRunner, type LlmDeps } from './llm';
 import { parseAgentId } from './agentProjects';
 import { BinanceFuturesClient, BINANCE_REST, liveKeyPermissions, type FetchLike } from './binance';
 import { connectWebSocket } from './wsClient';
@@ -40,7 +40,27 @@ import {
   type TradingConfig, type TradingSecretKey, type TradingSecretPresence, type TradingSymbol
 } from '../../shared/trading';
 
-const SECRET_PREFIX = 'trading:';
+/** What the desk needs from the app that hosts it. */
+export interface TradingHost {
+  /** Encrypted at rest; values never travel back to the renderer. */
+  secrets: {
+    get(key: TradingSecretKey): string | undefined;
+    set(key: TradingSecretKey, value: string): { ok: boolean; error?: string };
+    has(key: TradingSecretKey): boolean;
+    remove(key: TradingSecretKey): void;
+  };
+  /** The `claude` command for the Claude-subscription provider. */
+  claudeCommand(): string;
+  runHidden: HiddenRunner;
+  /** Pre-accept Claude Code's trust prompts for a session folder. */
+  prepareCwd(cwd: string): void;
+  /** Claude Code's transcript folder for a session folder. */
+  transcriptDirFor(cwd: string): string;
+  /** Folder holding resources/nautilus/desk_backtest.py. */
+  nautilusScriptDir: string;
+  /** The host's own project list (Munder Difflin's rooms); absent in the standalone desk. */
+  projects?: { isRegistered(root: string): boolean; register(root: string): void };
+}
 
 function dataDir(): string {
   const d = path.join(app.getPath('userData'), 'trading');
@@ -68,14 +88,23 @@ const isSecretKey = (k: unknown): k is TradingSecretKey =>
 const isSymbol = (s: unknown): s is TradingSymbol =>
   typeof s === 'string' && (TRADING_SYMBOLS as readonly string[]).includes(s);
 
-const readSecret = (k: TradingSecretKey) => getSecret(SECRET_PREFIX + k);
-
 function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export function registerTradingIpc(opts: { broadcast: (channel: string, payload: unknown) => void }): { dispose: () => void } {
+export function registerTradingIpc(opts: { broadcast: (channel: string, payload: unknown) => void; host: TradingHost }): { dispose: () => void } {
+  const { host } = opts;
   const fetchImpl = (globalThis as unknown as { fetch: FetchLike }).fetch;
+  const readSecret = (k: TradingSecretKey) => host.secrets.get(k);
+  const llmDeps = (sessionRoot: string): LlmDeps => ({
+    fetch: fetchImpl,
+    getSecret: readSecret,
+    sessionRoot,
+    claudeCommand: host.claudeCommand(),
+    runHidden: host.runHidden,
+    prepareCwd: (cwd) => host.prepareCwd(cwd),
+    transcriptDirFor: (cwd) => host.transcriptDirFor(cwd)
+  });
 
   // Keep the machine from suspending the app while the desk trades: a sleeping
   // laptop misses exits the exchange cannot handle for it (time stops, the
@@ -96,15 +125,7 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
     fetch: fetchImpl,
     dataDir: dataDir(),
     getSecret: readSecret,
-    createLlm: (cfg, sessionRoot) => createLlmClient(cfg.llm, {
-      fetch: fetchImpl,
-      getSecret: readSecret,
-      sessionRoot,
-      claudeCommand: readConfig().defaultCommand ?? 'claude',
-      runHidden: runHiddenClaude,
-      prepareCwd: (cwd) => ensureClaudePermissionsAccepted(cwd),
-      transcriptDirFor: (cwd) => projectDir(cwd)
-    }),
+    createLlm: (cfg, sessionRoot) => createLlmClient(cfg.llm, llmDeps(sessionRoot)),
     emit: (snapshot) => {
       syncKeepAwake(snapshot.status);
       opts.broadcast('trading:update', snapshot);
@@ -141,7 +162,7 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
 
   ipcMain.handle('trading:secrets', (): TradingSecretPresence => {
     const out = {} as TradingSecretPresence;
-    for (const k of TRADING_SECRET_KEYS) out[k] = hasSecret(SECRET_PREFIX + k);
+    for (const k of TRADING_SECRET_KEYS) out[k] = host.secrets.has(k);
     return out;
   });
 
@@ -149,13 +170,13 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
     const p = payload as { key?: unknown; value?: unknown } | null;
     if (!p || !isSecretKey(p.key) || typeof p.value !== 'string' || !p.value.trim()) return { ok: false, error: '잘못된 요청' };
     if (p.value.length > 512) return { ok: false, error: '값이 너무 깁니다' };
-    return setSecret(SECRET_PREFIX + p.key, p.value.trim());
+    return host.secrets.set(p.key, p.value.trim());
   });
 
   ipcMain.handle('trading:deleteSecret', (_e: unknown, payload: unknown) => {
     const p = payload as { key?: unknown } | null;
     if (!p || !isSecretKey(p.key)) return { ok: false, error: '잘못된 요청' };
-    deleteSecret(SECRET_PREFIX + p.key);
+    host.secrets.remove(p.key);
     return { ok: true };
   });
 
@@ -194,10 +215,7 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
   });
 
   // ── backtests ("과거 차트 리테스트") ─────────────────────────────────────
-  const nautilus = new NautilusEnv(
-    path.join(dataDir(), 'nautilus'),
-    app.isPackaged ? path.join(process.resourcesPath, 'nautilus') : path.join(app.getAppPath(), 'resources', 'nautilus')
-  );
+  const nautilus = new NautilusEnv(path.join(dataDir(), 'nautilus'), host.nautilusScriptDir);
   const backtests = new BacktestRunner({
     dataDir: dataDir(),
     history: engine.history,
@@ -250,9 +268,10 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
 
   ipcMain.handle('trading:agents', () => {
     try {
-      return { ok: true, root: engine.projects.root, agents: engine.listAgents(), registered: (readConfig().registeredRepos ?? []).includes(engine.projects.root) };
+      const root = engine.projects.root;
+      return { ok: true, root, agents: engine.listAgents(), registered: host.projects?.isRegistered(root) ?? false, canRegister: !!host.projects };
     } catch (e) {
-      return { ok: false, error: errMsg(e), root: engine.projects.root, agents: [], registered: false };
+      return { ok: false, error: errMsg(e), root: engine.projects.root, agents: [], registered: false, canRegister: !!host.projects };
     }
   });
 
@@ -272,10 +291,10 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
   /** The agents root becomes an office project (a room), so an office agent can be pointed at the desk's agents. */
   ipcMain.handle('trading:registerAgentsProject', () => {
     try {
+      if (!host.projects) return { ok: false, error: '이 앱에는 사무실 프로젝트가 없습니다' };
       const root = engine.projects.root;
-      const repos = readConfig().registeredRepos ?? [];
-      if (repos.includes(root)) return { ok: true, path: root, already: true };
-      writeConfig({ registeredRepos: [...repos, root] });
+      if (host.projects.isRegistered(root)) return { ok: true, path: root, already: true };
+      host.projects.register(root);
       engine.log(`에이전트 폴더를 사무실 프로젝트로 등록했습니다: ${root}`);
       return { ok: true, path: root, already: false };
     } catch (e) {
@@ -296,11 +315,7 @@ export function registerTradingIpc(opts: { broadcast: (channel: string, payload:
     const cfg = engine.config;
     try {
       if (target === 'llm') {
-        const llm = createLlmClient(cfg.llm, {
-          fetch: fetchImpl, getSecret: readSecret, sessionRoot: path.join(dataDir(), 'sessions'),
-          claudeCommand: readConfig().defaultCommand ?? 'claude', runHidden: runHiddenClaude,
-          prepareCwd: (cwd) => ensureClaudePermissionsAccepted(cwd), transcriptDirFor: (cwd) => projectDir(cwd)
-        });
+        const llm = createLlmClient(cfg.llm, llmDeps(path.join(dataDir(), 'sessions')));
         // Both tiers: the deep model (research manager, portfolio manager) is the one a
         // plan or a usage limit refuses, and finding out mid-analysis is too late.
         const tiers: Array<['quick' | 'deep', string]> = cfg.llm.quickModel === cfg.llm.deepModel

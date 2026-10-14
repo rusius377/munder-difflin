@@ -1,0 +1,38 @@
+{
+  "name": "trading-desk",
+  "productName": "TradingDesk",
+  "version": "1.0.0",
+  "description": "트레이딩 데스크 — TradingAgents × 바이낸스 USDⓈ-M 선물 (독립 실행 앱)",
+  "author": "rusius377",
+  "license": "MIT",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist:win": "electron-vite build && electron-builder --win --publish never",
+    "dist:linux": "electron-vite build && electron-builder --linux --publish never",
+    "dist:mac": "electron-vite build && electron-builder --mac --publish never"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "i18next": "^26.3.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^17.0.11",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8"
+  }
+}

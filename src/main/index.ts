@@ -86,6 +86,7 @@ import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalS
 import { loadHero } from './hero';
 import { loadModelCatalog } from './modelCatalog';
 import { registerTradingIpc } from './trading/ipc';
+import { munderDifflinHost } from './trading/munderHost';
 import {
   CODEX_REMOTE_SOCKET_RELATIVE,
   codexRemoteAliasPath,
@@ -3137,6 +3138,7 @@ ipcMain.handle('terminal:openAtFolder', async (_evt, cwd: unknown) => {
 // The engine lives in src/main/trading/; this only wires its snapshot push to
 // every open window (each floor shows the same desk).
 const tradingDesk = registerTradingIpc({
+  host: munderDifflinHost(),
   broadcast: (channel, payload) => {
     for (const w of allWindows) {
       if (w.isDestroyed() || w.webContents.isDestroyed()) continue;
