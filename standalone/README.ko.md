@@ -15,15 +15,18 @@ Munder Difflin 없이 **트레이딩 데스크만** 실행하는 Windows 앱입�
 
 ## 설치 파일 만들기 (GitHub Actions, PC에 개발 도구 불필요)
 
+`feat/trading-desk-ko` 브랜치에 데스크 관련 변경이 올라올 때마다 GitHub가 **자동으로** 설치 파일을 만듭니다.
+
 1. 포크(`rusius377/munder-difflin`) → **Actions** 탭 → 왼쪽에서 **Desk Release** 선택
-2. **Run workflow** → 브랜치 `feat/trading-desk-ko` → **Run workflow**
-3. 10분쯤 뒤 실행이 초록색으로 끝나면 실행을 열고, 아래 **Artifacts**의 `trading-desk-windows-2022`를 내려받아 압축을 풉니다.
+2. 맨 위(가장 최근) 실행이 초록색 ✓인지 확인하고 엽니다 (진행 중이면 10분쯤 기다립니다).
+3. 아래 **Artifacts**의 `trading-desk-windows-2022`를 내려받아 압축을 풉니다.
    - `TradingDesk-1.0.0-win-x64-setup.exe` — 설치형
    - `TradingDesk-1.0.0-win-x64-portable.exe` — 설치 없이 바로 실행
 4. 서명되지 않은 앱이라 Windows가 "PC 보호" 창을 띄우면 **추가 정보 → 실행**을 누릅니다.
 
-> 태그를 `desk-v1.0.0`처럼 붙여 푸시하면 같은 파일이 GitHub 릴리스로도 올라갑니다.
-> Munder Difflin 앱을 만드는 기존 Release 워크플로와는 따로 돕니다.
+> - 태그를 `desk-v1.0.0`처럼 붙여 푸시하면 같은 파일(과 Linux용)이 GitHub 릴리스로도 올라갑니다.
+> - **Run workflow** 버튼은 이 워크플로 파일이 기본 브랜치(`main`)에 있어야 나타납니다. 지금은 브랜치 푸시와 태그로 돕니다.
+> - Munder Difflin 앱을 만드는 기존 Release 워크플로와는 따로 돕니다.
 
 ## 처음 실행
 
