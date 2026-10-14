@@ -65,18 +65,34 @@ jobs:
       - name: Provide distutils for node-gyp
         run: python -m pip install --upgrade setuptools
 
+      # Each step keeps its output in a log; on failure the tail becomes an
+      # annotation, so the reason is visible on the run page (and via the API).
       - name: Install dependencies
         shell: bash
-        run: npm ci || { echo "::warning::npm ci failed - falling back to npm install"; npm install --no-audit --no-fund; }
+        run: |
+          if ! npm ci > npm-ci.log 2>&1; then
+            echo "::warning title=npm ci failed (falling back to npm install)::$(tail -c 2500 npm-ci.log | sed ':a;N;$!ba;s/\n/%0A/g')"
+            npm install --no-audit --no-fund
+          fi
 
       - name: Compile (electron-vite -> out/)
         run: npm run build
 
       - name: Package installer
-        run: npx electron-builder ${{ matrix.args }} --publish never
+        shell: bash
+        run: |
+          set -o pipefail
+          npx electron-builder ${{ matrix.args }} --publish never 2>&1 | tee builder.log
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Explain a packaging failure
+        if: failure()
+        shell: bash
+        run: |
+          [ -f builder.log ] || exit 0
+          echo "::error title=electron-builder::$(grep -v '^\s*$' builder.log | tail -c 3500 | sed ':a;N;$!ba;s/\n/%0A/g')"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
