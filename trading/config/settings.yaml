@@ -1,0 +1,90 @@
+# Munder Trading Desk — settings
+# 운영자가 직접 정하는 것은 사실상 하나: 최대 레버리지(max_leverage). 나머지는 데스크가 자동으로 판단하고
+# 학습 루프가 계속 조정합니다. 환경변수 MT_* 로 덮어쓸 수 있습니다 (예: MT_TRADING_ENV=testnet, MT_RISK__MAX_LEVERAGE=50).
+
+trading_env: paper            # paper | testnet | live   (live 는 `munder-trader run --yes` 로만 시작)
+paper_starting_balance: 10000
+state_dir: state              # journal.sqlite, params.json, lessons.jsonl, status.json, KILL_SWITCH
+log_level: INFO
+
+symbols:
+  - ETHUSDT
+  - BTCUSDT
+  - XAUUSDT
+  - SOLUSDT
+  - SNDKUSDT
+  - SPCXUSDT
+  - ZECUSDT
+
+binance:
+  isolated_margin: true       # 격리 마진 (한 포지션이 지갑 전체를 끌어쓰지 못하게)
+  taker_fee: 0.0005
+  maker_fee: 0.0002
+  recv_window_ms: 5000
+  # api_key / api_secret 는 .env 또는 환경변수(BINANCE_API_KEY, BINANCE_API_SECRET)로
+
+llm:
+  provider: none              # none | openai | anthropic | ollama | openrouter | groq | openai_compatible
+  quick_model: gpt-4o-mini
+  deep_model: gpt-4o
+  base_url: ""                # ollama: http://localhost:11434/v1 , openai_compatible: 임의 엔드포인트
+  temperature: 0.2
+  max_adjustment: 0.35        # LLM 이 규칙 기반 확신도를 움직일 수 있는 최대 폭
+  output_language: ko
+
+risk:
+  max_leverage: 100           # ★ 하드 캡. 실제 레버리지는 손절폭/청산거리/브래킷 기준으로 트레이드마다 자동 선택
+  base_risk_per_trade_pct: 0.75
+  max_risk_per_trade_pct: 2.5
+  max_margin_fraction: 0.60
+  max_concurrent_positions: 4
+  daily_loss_limit_pct: 6.0
+  max_drawdown_pause_pct: 15.0
+  pause_minutes_after_limit: 240
+  consecutive_loss_cut: 4
+  liquidation_buffer_multiple: 3.0
+  funding_rate_warn: 0.0008
+  kill_switch_file: state/KILL_SWITCH
+
+learning:
+  enabled: true
+  relearn_interval_min: 180   # 3시간마다 전 종목·전 데스크 워크포워드 재최적화
+  history_days: 120
+  walk_forward_folds: 4
+  train_fraction: 0.7
+  population: 24
+  generations: 8
+  min_trades: 20
+  promotion_margin: 0.03
+  use_backtrader_confirmation: true
+
+swing:                        # 원래(TradingAgents) 모드
+  enabled: true
+  budget_share: 0.5
+  base_timeframe: 1h
+  context_timeframes: [4h, 1d]
+  debate_rounds: 2
+
+scalp:                        # 스캘핑 모드
+  enabled: true
+  budget_share: 0.5
+  base_timeframe: 1m
+  context_timeframe: 5m
+  microstructure_trigger: true
+  book_depth_levels: 20
+  tape_window_s: 30
+
+data:
+  cache_dir: data
+  use_nautilus: false         # pip install nautilus_trader 후 true 로 바꾸면 nautilus LiveNode 호가/체결 피드 사용
+  stream_depth_speed: 100ms
+  poll_interval_s: 2.0
+
+server:
+  enabled: true
+  host: 0.0.0.0
+  port: 8787
+
+notify:
+  telegram_bot_token: ""
+  telegram_chat_id: ""

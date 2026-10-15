@@ -79,11 +79,33 @@ countries and as low as $100 a year. <a href="https://app.harnessmd.com/console/
 - [Features](#features)
 - [Getting started](#getting-started)
 - [Architecture & project structure](./docs/ARCHITECTURE.md)
+- [Trading Desk (Binance futures, TradingAgents-style)](./docs/TRADING.md)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [Telemetry](#telemetry)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
+
+## Trading Desk
+
+**The office now has a trading desk.** [`trading/`](./trading/README.md) is a headless, self-learning
+[TradingAgents](https://github.com/TauricResearch/TradingAgents)-style desk for Binance USDⓈ-M perpetual futures
+(ETH, BTC, XAU, SOL, SNDK, SPCX, ZEC). Two desks run side by side and show their judgment, evidence and reasoning:
+the original **swing** committee (1h/4h/1d, derivatives fundamentals, news, sentiment) and an added **scalp** committee
+(1m/5m plus live order-book and trade-flow analysts). Around them: automatic sizing / split entries / leverage selection
+(only the hard cap is fixed, 100x by default), a risk manager, a fast backtester cross-checked by
+[backtrader](https://github.com/mementum/backtrader), a walk-forward evolutionary optimizer that keeps retuning
+parameters, a reflection memory that learns from every closed trade, an optional
+[nautilus_trader](https://github.com/nautechsystems/nautilus_trader) L2 book/tick bridge, a paper broker, a Binance
+futures broker and a 24/7 engine with a dashboard — it keeps trading on a VPS/Docker/systemd while the app is closed.
+
+```bash
+cd trading && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt && pip install -e .
+munder-trader selftest && munder-trader analyze ETHUSDT      # both desks explain their call, no orders
+munder-trader paper                                          # 24/7 paper trading, dashboard on :8787
+```
+
+See [docs/TRADING.md](./docs/TRADING.md) for how Michael and the office agents operate the desk.
 
 ## Supported agents
 

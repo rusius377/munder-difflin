@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "munder-trader"
+version = "0.1.0"
+description = "Munder Trading Desk — TradingAgents-style multi-agent Binance USDⓈ-M futures desk (swing + scalp) with self-learning backtests, order-book/trade-flow microstructure and 24/7 headless operation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Munder Difflin Trading Desk" }]
+keywords = ["binance", "futures", "trading", "multi-agent", "backtrader", "nautilus_trader", "scalping"]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "pydantic>=2.5",
+  "PyYAML>=6.0",
+  "requests>=2.31",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Live order-book / trade-flow streaming straight from Binance futures websockets.
+stream = ["websockets>=12.0"]
+# Independent validation of strategies with the classic backtrader engine.
+backtrader = ["backtrader>=1.9.78.123"]
+# Exchange-grade L2 book + tick replay/live feed through nautilus_trader (Rust core).
+nautilus = ["nautilus_trader>=1.200"]
+# LLM-powered agents (any OpenAI-compatible endpoint, Anthropic, Ollama, OpenRouter, Groq).
+llm = ["openai>=1.40", "anthropic>=0.40"]
+# Everything the 24/7 daemon can use.
+all = ["websockets>=12.0", "backtrader>=1.9.78.123", "nautilus_trader>=1.200", "openai>=1.40", "anthropic>=0.40"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+munder-trader = "munder_trader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["munder_trader*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

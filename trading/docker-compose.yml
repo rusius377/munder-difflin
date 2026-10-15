@@ -1,0 +1,18 @@
+services:
+  desk:
+    build: .
+    container_name: munder-trader
+    restart: always                # survives reboots and crashes → 24/7 without the desktop app
+    env_file: .env                 # BINANCE_API_KEY / BINANCE_API_SECRET / MT_TRADING_ENV / LLM keys
+    environment:
+      MT_SERVER__HOST: 0.0.0.0
+      MT_SERVER__PORT: "8787"
+    ports:
+      - "127.0.0.1:8787:8787"      # dashboard: http://<vps-ip>:8787 (expose only via SSH tunnel / reverse proxy)
+    volumes:
+      - ./state:/app/state
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }

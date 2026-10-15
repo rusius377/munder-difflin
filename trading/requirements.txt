@@ -1,0 +1,20 @@
+# Core (always required)
+numpy>=1.26
+pandas>=2.1
+pydantic>=2.5
+PyYAML>=6.0
+requests>=2.31
+python-dotenv>=1.0
+
+# Live order book / trade flow over Binance futures websockets (strongly recommended for scalp mode)
+websockets>=12.0
+
+# Independent strategy validation with backtrader (classic event-driven backtester)
+backtrader>=1.9.78.123
+
+# Exchange-grade L2 order book + tick replay / live feed (optional, large wheel with Rust core)
+# nautilus_trader>=1.200
+
+# LLM-powered agent debates (optional — the desk runs fully rule-based without any key)
+# openai>=1.40
+# anthropic>=0.40

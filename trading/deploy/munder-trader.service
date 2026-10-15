@@ -1,0 +1,25 @@
+# systemd unit — 24/7 desk without Docker
+#   sudo cp deploy/munder-trader.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now munder-trader
+#   journalctl -u munder-trader -f
+[Unit]
+Description=Munder Trading Desk (Binance USDⓈ-M futures, TradingAgents-style desk)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trader
+WorkingDirectory=/opt/munder-trader/trading
+EnvironmentFile=/opt/munder-trader/trading/.env
+ExecStart=/opt/munder-trader/trading/.venv/bin/munder-trader run --yes
+Restart=always
+RestartSec=10
+# graceful stop: the engine cancels nothing on the exchange; stops/targets stay resting
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Nice=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

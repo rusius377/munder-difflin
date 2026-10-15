@@ -35,3 +35,11 @@ docs/blog-preview-*/
 # Finder duplicate files, e.g. "spec 2.js", "sitemap 2.xml"
 *\ 2.*
 *\ [0-9].*
+
+# Trading desk (trading/): runtime state, market-data cache, secrets, venv
+trading/state/
+trading/data/
+trading/.env
+trading/.venv/
+trading/**/__pycache__/
+trading/*.egg-info/
